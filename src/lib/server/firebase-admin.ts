@@ -56,8 +56,7 @@ function initAdminApp(): App | null {
 
     const projectId =
       process.env.FIREBASE_PROJECT_ID ||
-      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
-      "compiler-13c02";
+      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
     const privateKey = sanitizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
 
