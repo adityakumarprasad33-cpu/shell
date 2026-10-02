@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import {
   FilesystemEngine,
   getWorkspaceRoot,
@@ -49,8 +51,6 @@ export function readWorkspaceFile(
   const matched = allFiles.find((f) => f.path.toLowerCase() === safeRelPath.toLowerCase() && f.type === 'file');
   if (!matched) return null;
 
-  const fs = require('fs');
-  const path = require('path');
   const storePath = path.join(
     process.cwd(),
     '.runix_cloud_storage',

@@ -23,9 +23,12 @@ import {
   getWorkspaceStateFromFirestore,
   loadLocalStore,
   saveLocalStore,
+  chunkContent,
+  computeSha256,
   FirestoreFileMetadata,
   FirestoreFolderMetadata,
 } from '../storage/firestore-chunk-storage';
+import { getAdminDb } from '../server/firebase-admin';
 import { OFFICIAL_RUNIX_COMMAND_REFERENCE } from './command-reference';
 import { RunixPathResolver } from './path-resolver';
 
@@ -122,6 +125,7 @@ export class FilesystemEngine {
   public static ensureWorkspaceState(accountId: string = 'anonymous_dev', workspaceId: string = 'default'): void {
     const cacheKey = `${accountId}:${workspaceId}`;
     if (initializedWorkspaces.has(cacheKey)) return;
+    initializedWorkspaces.add(cacheKey);
 
     // Check existing Firestore store
     const store = loadLocalStore(accountId, workspaceId);
@@ -141,14 +145,12 @@ export class FilesystemEngine {
         const diskEntries = fs.readdirSync(legacyDiskDir).filter((e) => !e.startsWith('.') && e !== 'node_modules');
         if (diskEntries.length > 0) {
           this.migrateLegacyDiskFiles(accountId, workspaceId, legacyDiskDir);
-          initializedWorkspaces.add(cacheKey);
           return;
         }
       } catch {}
     }
 
     // Clean bootstrap with runix-command.txt
-    initializedWorkspaces.add(cacheKey);
     if (!hasFiles) {
       try {
         this.saveFileSync(
@@ -353,13 +355,13 @@ export class FilesystemEngine {
     }
 
     const newVersion = currentVersion + 1;
-    const chunks = require('../storage/firestore-chunk-storage').chunkContent(content);
-    const fullChecksum = require('../storage/firestore-chunk-storage').computeSha256(content);
+    const chunks = chunkContent(content);
+    const fullChecksum = computeSha256(content);
 
     if (!store.chunks[fileId]) store.chunks[fileId] = {};
     for (let seq = 0; seq < chunks.length; seq++) {
       const chunkData = chunks[seq];
-      const chunkChecksum = require('../storage/firestore-chunk-storage').computeSha256(chunkData);
+      const chunkChecksum = computeSha256(chunkData);
       const chunkId = `v${newVersion}_${seq.toString().padStart(5, '0')}`;
       store.chunks[fileId][chunkId] = {
         chunkId,
@@ -407,7 +409,6 @@ export class FilesystemEngine {
 
     // Asynchronously write to live Firestore if configured
     try {
-      const { getAdminDb } = require('../server/firebase-admin');
       const adminDb = getAdminDb();
       if (adminDb && accountId !== 'anonymous_dev') {
         saveFileToFirestoreChunks(accountId, workspaceId, meta, content, expectedVersion).catch(() => {});

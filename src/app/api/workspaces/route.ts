@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb, verifyUserToken } from '@/lib/server/firebase-admin';
 import { TerminalWorkspace } from '@/lib/types/terminal';
 import { OFFICIAL_RUNIX_COMMAND_REFERENCE } from '@/lib/workspace/workspace-storage';
+import { FilesystemEngine } from '@/lib/workspace/filesystem-engine';
 import fs from 'fs';
 import path from 'path';
 
@@ -158,7 +159,6 @@ export async function POST(request: NextRequest) {
       saveLocalWorkspaces(accountId, list);
 
       // Seed clean runix-command.txt in local filesystem engine store
-      const { FilesystemEngine } = require('@/lib/workspace/filesystem-engine');
       FilesystemEngine.saveFileSync(accountId, workspaceId, 'runix-command.txt', OFFICIAL_RUNIX_COMMAND_REFERENCE);
     }
 
