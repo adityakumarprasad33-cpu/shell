@@ -19,6 +19,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { getAdminDb } from '../server/firebase-admin';
 import { validateFileLimits, FileLimitValidationResult } from '../workspace/file-limits';
 
@@ -96,7 +97,22 @@ export function chunkContent(content: string, chunkSize: number = CHUNK_SIZE_BYT
 // --------------------------------------------------------------------------
 // LOCAL PERSISTENT FALLBACK EMULATOR (Matching exact Firestore Document Model)
 // --------------------------------------------------------------------------
-const LOCAL_STORAGE_ROOT = path.join(process.cwd(), '.runix_cloud_storage');
+function getLocalStorageRoot(): string {
+  const isServerless = typeof process !== 'undefined' && (
+    !!process.env.NETLIFY ||
+    !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    !!process.env.LAMBDA_TASK_ROOT ||
+    !!process.env.VERCEL ||
+    (typeof process.cwd === 'function' && (
+      process.cwd().startsWith('/var/task') ||
+      process.cwd().startsWith('/opt')
+    ))
+  );
+  if (isServerless) {
+    return path.join(os.tmpdir(), '.runix_cloud_storage');
+  }
+  return path.join(process.cwd(), '.runix_cloud_storage');
+}
 
 export interface WorkspaceDataStore {
   files: Record<string, FirestoreFileMetadata>;
@@ -107,11 +123,24 @@ export interface WorkspaceDataStore {
 export function getStorePath(accountId: string, workspaceId: string): string {
   const safeAccount = (accountId || 'anonymous_dev').replace(/[^a-zA-Z0-9_-]/g, '_');
   const safeWorkspace = (workspaceId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const dir = path.join(LOCAL_STORAGE_ROOT, safeAccount, safeWorkspace);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  const baseDir = getLocalStorageRoot();
+  const dir = path.join(/*turbopackIgnore: true*/ baseDir, safeAccount, safeWorkspace);
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    return path.join(dir, 'firestore_store.json');
+  } catch {
+    try {
+      const fallbackDir = path.join(os.tmpdir(), '.runix_cloud_storage', safeAccount, safeWorkspace);
+      if (!fs.existsSync(fallbackDir)) {
+        fs.mkdirSync(fallbackDir, { recursive: true });
+      }
+      return path.join(fallbackDir, 'firestore_store.json');
+    } catch {
+      return path.join(os.tmpdir(), `runix_store_${safeAccount}_${safeWorkspace}.json`);
+    }
   }
-  return path.join(dir, 'firestore_store.json');
 }
 
 export function loadLocalStore(accountId: string, workspaceId: string): WorkspaceDataStore {

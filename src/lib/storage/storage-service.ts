@@ -6,6 +6,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 export interface StorageObjectMetadata {
   objectId: string;
@@ -35,7 +36,18 @@ export class GoogleCloudStorageAdapter implements StorageAdapter {
 
   constructor(bucketName: string = process.env.RUNIX_GCS_BUCKET || 'runix-storage-artifacts') {
     this.bucketName = bucketName;
-    this.localFallbackDir = path.join(process.cwd(), 'runix_storage_blobs');
+    const isServerless = typeof process !== 'undefined' && (
+      !!process.env.NETLIFY ||
+      !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      !!process.env.LAMBDA_TASK_ROOT ||
+      !!process.env.VERCEL ||
+      (typeof process.cwd === 'function' && (
+        process.cwd().startsWith('/var/task') ||
+        process.cwd().startsWith('/opt')
+      ))
+    );
+    const baseDir = isServerless ? os.tmpdir() : process.cwd();
+    this.localFallbackDir = path.join(baseDir, 'runix_storage_blobs');
     if (!fs.existsSync(this.localFallbackDir)) {
       try {
         fs.mkdirSync(this.localFallbackDir, { recursive: true });

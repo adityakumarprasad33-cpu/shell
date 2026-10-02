@@ -1,14 +1,29 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { ReleaseItem } from '@/lib/types/terminal';
 import { RUNIX_TERMINAL_RELEASES } from './release-manifest';
 
-const RELEASES_FILE = path.resolve(process.cwd(), 'data/releases.json');
+function getReleasesFilePath(): string {
+  const isServerless = typeof process !== 'undefined' && (
+    !!process.env.NETLIFY ||
+    !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    (typeof process.cwd === 'function' && process.cwd().startsWith('/var/task'))
+  );
+  if (isServerless) {
+    return path.join(os.tmpdir(), 'runix_data', 'releases.json');
+  }
+  return path.resolve(process.cwd(), 'data/releases.json');
+}
 
-function ensureDirectory() {
-  const dir = path.dirname(RELEASES_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+function ensureDirectory(filePath: string) {
+  try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('Notice in ensureDirectory for releases:', err);
   }
 }
 
@@ -16,10 +31,11 @@ function ensureDirectory() {
  * Get all current releases from the persistent store
  */
 export function getAllReleases(): ReleaseItem[] {
-  ensureDirectory();
+  const file = getReleasesFilePath();
+  ensureDirectory(file);
   try {
-    if (fs.existsSync(RELEASES_FILE)) {
-      const content = fs.readFileSync(RELEASES_FILE, 'utf-8');
+    if (fs.existsSync(file)) {
+      const content = fs.readFileSync(file, 'utf-8');
       const data = JSON.parse(content);
       if (Array.isArray(data) && data.length > 0) {
         return data;
@@ -37,8 +53,13 @@ export function getAllReleases(): ReleaseItem[] {
  * Save all releases to the persistent store
  */
 export function saveAllReleases(releases: ReleaseItem[]): void {
-  ensureDirectory();
-  fs.writeFileSync(RELEASES_FILE, JSON.stringify(releases, null, 2), 'utf-8');
+  const file = getReleasesFilePath();
+  ensureDirectory(file);
+  try {
+    fs.writeFileSync(file, JSON.stringify(releases, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Notice saving releases to store:', err);
+  }
 }
 
 /**

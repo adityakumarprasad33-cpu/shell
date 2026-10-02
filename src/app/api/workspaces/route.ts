@@ -5,16 +5,44 @@ import { OFFICIAL_RUNIX_COMMAND_REFERENCE } from '@/lib/workspace/workspace-stor
 import { FilesystemEngine } from '@/lib/workspace/filesystem-engine';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
-const LOCAL_STORE_BASE = path.join(process.cwd(), '.runix_cloud_storage');
+function getLocalWorkspacesBase(): string {
+  const isServerless = typeof process !== 'undefined' && (
+    !!process.env.NETLIFY ||
+    !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    !!process.env.LAMBDA_TASK_ROOT ||
+    !!process.env.VERCEL ||
+    (typeof process.cwd === 'function' && (
+      process.cwd().startsWith('/var/task') ||
+      process.cwd().startsWith('/opt')
+    ))
+  );
+  if (isServerless) {
+    return path.join(os.tmpdir(), '.runix_cloud_storage');
+  }
+  return path.join(process.cwd(), '.runix_cloud_storage');
+}
 
 function getLocalWorkspacesFile(accountId: string): string {
   const safeAcc = accountId.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const dir = path.join(LOCAL_STORE_BASE, safeAcc);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  const dir = path.join(getLocalWorkspacesBase(), safeAcc);
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    return path.join(dir, 'workspaces.json');
+  } catch {
+    try {
+      const fallbackDir = path.join(os.tmpdir(), '.runix_cloud_storage', safeAcc);
+      if (!fs.existsSync(fallbackDir)) {
+        fs.mkdirSync(fallbackDir, { recursive: true });
+      }
+      return path.join(fallbackDir, 'workspaces.json');
+    } catch {
+      return path.join(os.tmpdir(), `runix_workspaces_${safeAcc}.json`);
+    }
   }
-  return path.join(dir, 'workspaces.json');
 }
 
 function loadLocalWorkspaces(accountId: string): TerminalWorkspace[] {
@@ -282,7 +310,7 @@ export async function DELETE(request: NextRequest) {
 
       // Clean up local store file
       const safeAcc = accountId.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const wsFile = path.join(LOCAL_STORE_BASE, `${safeAcc}_${workspaceId}.json`);
+      const wsFile = path.join(getLocalWorkspacesBase(), `${safeAcc}_${workspaceId}.json`);
       if (fs.existsSync(wsFile)) {
         try { fs.unlinkSync(wsFile); } catch {}
       }

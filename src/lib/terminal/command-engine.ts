@@ -3,6 +3,7 @@ import path from 'path';
 import { StreamEvent, runInSandbox, materializeExecutionSandbox, cleanupExecutionSandbox } from './sandbox-runner';
 import {
   ensureWorkspace,
+  getWorkspaceRoot,
   saveWorkspaceFile,
   readWorkspaceFile,
   deleteWorkspaceFile,
@@ -126,7 +127,12 @@ export async function processTerminalCommand(
   const rawCommand = ctx.command.trim();
   const accountId = ctx.accountId || 'anonymous_dev';
   const workspaceId = ctx.workspaceId || 'default';
-  const workspaceDir = ensureWorkspace(accountId, workspaceId);
+  const workspaceDir = getWorkspaceRoot(accountId, workspaceId);
+  try {
+    ensureWorkspace(accountId, workspaceId);
+  } catch (err) {
+    console.warn('ensureWorkspace non-fatal notice:', err);
+  }
 
   // Initialize or fetch session for working directory tracking
   const session = TerminalSessionManager.getOrCreateSession(ctx.sessionId, accountId, workspaceId);

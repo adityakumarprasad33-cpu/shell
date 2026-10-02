@@ -92,23 +92,28 @@ export async function POST(request: NextRequest) {
         fileSize = formatBytes(buffer.length);
 
         // Save file to public release storage
-        const targetDir = path.resolve(process.cwd(), `public/releases/${platform}`);
-        if (!fs.existsSync(targetDir)) {
-          fs.mkdirSync(targetDir, { recursive: true });
-        }
-        const filePath = path.join(targetDir, customFilename);
-        fs.writeFileSync(filePath, buffer);
+        let savedFilePath = '';
+        try {
+          const targetDir = path.resolve(process.cwd(), `public/releases/${platform}`);
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+          savedFilePath = path.join(targetDir, customFilename);
+          fs.writeFileSync(savedFilePath, buffer);
 
-        // Also save to versioned directory for immutability
-        const versionDir = path.resolve(process.cwd(), `public/releases/v${version}/${platform}/${architecture}`);
-        if (!fs.existsSync(versionDir)) {
-          fs.mkdirSync(versionDir, { recursive: true });
+          // Also save to versioned directory for immutability
+          const versionDir = path.resolve(process.cwd(), `public/releases/v${version}/${platform}/${architecture}`);
+          if (!fs.existsSync(versionDir)) {
+            fs.mkdirSync(versionDir, { recursive: true });
+          }
+          fs.writeFileSync(path.join(versionDir, customFilename), buffer);
+        } catch (fsErr) {
+          console.warn('Notice saving release file to local disk (may be read-only):', fsErr);
         }
-        fs.writeFileSync(path.join(versionDir, customFilename), buffer);
 
         // Optional PE verification for Windows
-        if (platform === 'windows' && customFilename.endsWith('.exe')) {
-          const pe = verifyPEBinary(filePath);
+        if (platform === 'windows' && customFilename.endsWith('.exe') && savedFilePath && fs.existsSync(savedFilePath)) {
+          const pe = verifyPEBinary(savedFilePath);
           if (!pe.isValidPE) {
             console.warn('Uploaded Windows binary PE check warning:', pe.error);
           }

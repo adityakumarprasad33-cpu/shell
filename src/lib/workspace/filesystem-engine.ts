@@ -10,6 +10,7 @@
 
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { WorkspaceFile } from '../types/terminal';
 import { LanguageDetectionService } from '../runtimes/language-detection-service';
 import { validateFileLimits, FileLimitValidationResult } from './file-limits';
@@ -75,15 +76,38 @@ export function getParentFolderId(workspaceId: string, relPath: string, meta?: W
   return generateCanonicalId(workspaceId, dir);
 }
 
-// Legacy helper for compatibility
+// Helper for runtime and filesystem compatibility
 export function getWorkspaceRoot(accountId: string = 'anonymous_dev', workspaceId: string = 'default'): string {
   const safeAccount = (accountId || 'anonymous_dev').replace(/[^a-zA-Z0-9_-]/g, '_');
   const safeWorkspace = (workspaceId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const dir = path.join(process.cwd(), 'runix_workspaces', safeAccount, safeWorkspace);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  const isServerless = typeof process !== 'undefined' && (
+    !!process.env.NETLIFY ||
+    !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    !!process.env.LAMBDA_TASK_ROOT ||
+    !!process.env.VERCEL ||
+    (typeof process.cwd === 'function' && (
+      process.cwd().startsWith('/var/task') ||
+      process.cwd().startsWith('/opt')
+    ))
+  );
+  const baseDir = isServerless ? os.tmpdir() : process.cwd();
+  const dir = path.join(baseDir, 'runix_workspaces', safeAccount, safeWorkspace);
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    return dir;
+  } catch {
+    try {
+      const fallbackDir = path.join(os.tmpdir(), 'runix_workspaces', safeAccount, safeWorkspace);
+      if (!fs.existsSync(fallbackDir)) {
+        fs.mkdirSync(fallbackDir, { recursive: true });
+      }
+      return fallbackDir;
+    } catch {
+      return path.join(os.tmpdir(), `ws_${safeAccount}_${safeWorkspace}`);
+    }
   }
-  return dir;
 }
 
 export function loadWorkspaceMeta(accountId: string = 'anonymous_dev', workspaceId: string = 'default'): WorkspaceMeta {
@@ -105,7 +129,11 @@ export function saveWorkspaceMeta(accountId: string = 'anonymous_dev', workspace
 }
 
 export function ensureWorkspace(accountId: string = 'anonymous_dev', workspaceId: string = 'default'): string {
-  FilesystemEngine.ensureWorkspaceState(accountId, workspaceId);
+  try {
+    FilesystemEngine.ensureWorkspaceState(accountId, workspaceId);
+  } catch (err) {
+    console.warn('Notice in ensureWorkspaceState:', err);
+  }
   return getWorkspaceRoot(accountId, workspaceId);
 }
 
