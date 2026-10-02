@@ -44,7 +44,9 @@ export function countWords(text: string): number {
  * All limits must pass simultaneously.
  */
 export function validateFileLimits(content: string | Buffer): FileLimitValidationResult {
-  const sizeBytes = typeof content === 'string' ? Buffer.byteLength(content, 'utf-8') : content.length;
+  const sizeBytes = typeof content === 'string'
+    ? (typeof Buffer !== 'undefined' ? Buffer.byteLength(content, 'utf-8') : new TextEncoder().encode(content).length)
+    : content.length;
   const text = typeof content === 'string' ? content : content.toString('utf-8');
   
   const lineCount = countLines(text);

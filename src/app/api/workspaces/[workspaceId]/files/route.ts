@@ -22,7 +22,7 @@ export async function GET(
       return NextResponse.json({ file });
     }
 
-    const files = FilesystemEngine.getWorkspaceFiles(accountId, workspaceId);
+    const files = await FilesystemEngine.getWorkspaceFilesAsync(accountId, workspaceId);
     return NextResponse.json({ files });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -122,7 +122,7 @@ export async function POST(
     }
 
     if (isDirectory) {
-      const folderRecord = FilesystemEngine.createFolder(accountId, workspaceId, rawPath);
+      const folderRecord = await FilesystemEngine.createFolderAsync(accountId, workspaceId, rawPath);
       return NextResponse.json({ file: folderRecord, success: true });
     }
 

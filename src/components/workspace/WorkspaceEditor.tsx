@@ -8,6 +8,7 @@ import { FileCapabilityState } from '@/lib/runtimes/capability-resolver';
 import { identifyLanguage } from '@/lib/runtimes/language-registry';
 import { safeFetchJson } from '@/lib/safe-json';
 import { FileIcon } from './FileIcon';
+import { FirestoreClientService } from '@/lib/workspace/firestore-client-service';
 
 interface WorkspaceEditorProps {
   file: WorkspaceFile | null;
@@ -84,11 +85,29 @@ export function WorkspaceEditor({
   useEffect(() => {
     if (!file) return;
 
-    // Load fresh file content from API
+    // Load fresh file content from Firestore chunks (direct) or API fallback
     const loadContent = async () => {
       try {
         const token = user ? await user.getIdToken() : '';
         const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
+
+        // Direct Firestore chunk reassembly with SHA-256 verification
+        if (user && accountId !== 'anonymous_dev') {
+          try {
+            const direct = await FirestoreClientService.readFile(
+              accountId,
+              workspace.workspaceId,
+              file.path
+            );
+            if (direct && direct.content !== undefined) {
+              setContent(direct.content);
+              return;
+            }
+          } catch (fErr) {
+            console.warn('Direct Firestore readFile notice:', fErr);
+          }
+        }
+
         const result = await safeFetchJson<{ file?: WorkspaceFile }>(
           `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files?path=${encodeURIComponent(
             file.path
@@ -116,6 +135,21 @@ export function WorkspaceEditor({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
+
+      let savedDirectly: WorkspaceFile | null = null;
+      if (user && accountId !== 'anonymous_dev') {
+        try {
+          savedDirectly = await FirestoreClientService.saveFile(
+            accountId,
+            workspace.workspaceId,
+            file.path,
+            content
+          );
+        } catch (fErr: any) {
+          console.warn('Direct Firestore saveFile notice:', fErr);
+        }
+      }
+
       const result = await safeFetchJson<{ file?: WorkspaceFile; message?: string; error?: string }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files`,
         {
@@ -131,11 +165,11 @@ export function WorkspaceEditor({
           }),
         }
       );
-      if (result.ok) {
+      if (savedDirectly || result.ok) {
         setSaveError(null);
         setIsSaved(true);
         setTimeout(() => setIsSaved(false), 2000);
-        onFileSaved?.(result.data?.file || { ...file, content });
+        onFileSaved?.(savedDirectly || result.data?.file || { ...file, content });
         return true;
       } else {
         setSaveError(result.error || result.data?.message || 'Save failed');

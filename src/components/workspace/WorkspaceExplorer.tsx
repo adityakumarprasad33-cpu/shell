@@ -28,6 +28,7 @@ import { identifyLanguage } from '@/lib/runtimes/language-registry';
 import { safeFetchJson } from '@/lib/safe-json';
 import { FileIcon } from './FileIcon';
 import { FolderIcon } from './FolderIcon';
+import { FirestoreClientService } from '@/lib/workspace/firestore-client-service';
 
 interface WorkspaceExplorerProps {
   workspace: TerminalWorkspace;
@@ -79,6 +80,25 @@ export function WorkspaceExplorer({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
+
+      // 1. Authoritative direct Firestore query when user is authenticated
+      if (user && accountId !== 'anonymous_dev') {
+        try {
+          const directFiles = await FirestoreClientService.listWorkspaceItems(
+            accountId,
+            workspace.workspaceId
+          );
+          if (directFiles && directFiles.length > 0) {
+            setFiles(directFiles);
+            setLoading(false);
+            return;
+          }
+        } catch (fErr) {
+          console.warn('Direct FirestoreClientService query notice:', fErr);
+        }
+      }
+
+      // 2. Server API fallback query
       const result = await safeFetchJson<{ files: WorkspaceFile[] }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files?accountId=${encodeURIComponent(accountId)}`,
         {
@@ -150,6 +170,29 @@ export function WorkspaceExplorer({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
+
+      let directCreated: WorkspaceFile | null = null;
+      if (user && accountId !== 'anonymous_dev') {
+        try {
+          if (isCreatingFolder) {
+            directCreated = await FirestoreClientService.createFolder(
+              accountId,
+              workspace.workspaceId,
+              fullPath
+            );
+          } else {
+            directCreated = await FirestoreClientService.saveFile(
+              accountId,
+              workspace.workspaceId,
+              fullPath,
+              ''
+            );
+          }
+        } catch (fErr) {
+          console.warn('Direct Firestore create notice:', fErr);
+        }
+      }
+
       const result = await safeFetchJson<{ file?: WorkspaceFile; error?: string; message?: string }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files`,
         {
@@ -167,7 +210,7 @@ export function WorkspaceExplorer({
         }
       );
 
-      if (result.ok && result.data) {
+      if (directCreated || (result.ok && result.data)) {
         setNewItemName('');
         setIsCreatingFile(false);
         setIsCreatingFolder(false);
@@ -183,8 +226,9 @@ export function WorkspaceExplorer({
 
         await loadFiles();
 
-        if (result.data.file && result.data.file.type === 'file') {
-          onOpenFile(result.data.file);
+        const fileToOpen = directCreated || result.data?.file;
+        if (fileToOpen && fileToOpen.type === 'file') {
+          onOpenFile(fileToOpen);
         }
       } else {
         alert(result.error || result.data?.message || 'Failed to create item');
@@ -210,6 +254,32 @@ export function WorkspaceExplorer({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
+
+      let directRenamed: WorkspaceFile | null = null;
+      if (user && accountId !== 'anonymous_dev') {
+        try {
+          if (file.type === 'directory') {
+            const rRes = await FirestoreClientService.renameFolder(
+              accountId,
+              workspace.workspaceId,
+              file.path,
+              newPath
+            );
+            if (rRes.success && rRes.item) directRenamed = rRes.item;
+          } else {
+            const rRes = await FirestoreClientService.renameFile(
+              accountId,
+              workspace.workspaceId,
+              file.path,
+              newPath
+            );
+            if (rRes.success && rRes.item) directRenamed = rRes.item;
+          }
+        } catch (fErr) {
+          console.warn('Direct Firestore rename notice:', fErr);
+        }
+      }
+
       const result = await safeFetchJson<{ item?: WorkspaceFile; error?: string }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files`,
         {
@@ -228,13 +298,14 @@ export function WorkspaceExplorer({
         }
       );
 
-      if (!result.ok) {
-        alert(result.error || 'Failed to rename item');
-      } else {
+      if (directRenamed || result.ok) {
         await loadFiles();
-        if (file.type === 'file' && activeFilePath === file.path && result.data?.item) {
-          onOpenFile(result.data.item);
+        const finalItem = directRenamed || result.data?.item;
+        if (file.type === 'file' && activeFilePath === file.path && finalItem) {
+          onOpenFile(finalItem);
         }
+      } else {
+        alert(result.error || 'Failed to rename item');
       }
     } catch (err: any) {
       console.error('Rename error:', err);
@@ -272,6 +343,22 @@ export function WorkspaceExplorer({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
+
+      let directMoved = false;
+      if (user && accountId !== 'anonymous_dev') {
+        try {
+          const mRes = await FirestoreClientService.moveItem(
+            accountId,
+            workspace.workspaceId,
+            sourcePath,
+            destinationFolder
+          );
+          if (mRes.success) directMoved = true;
+        } catch (fErr) {
+          console.warn('Direct Firestore move notice:', fErr);
+        }
+      }
+
       const result = await safeFetchJson<{ error?: string }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files`,
         {
@@ -289,9 +376,7 @@ export function WorkspaceExplorer({
         }
       );
 
-      if (!result.ok) {
-        alert(result.error || 'Failed to move item');
-      } else {
+      if (directMoved || result.ok) {
         // Expand destination folder so moved item is visible
         if (destinationFolder) {
           setCollapsedFolders((prev) => {
@@ -301,6 +386,8 @@ export function WorkspaceExplorer({
           });
         }
         await loadFiles();
+      } else {
+        alert(result.error || 'Failed to move item');
       }
     } catch (err: any) {
       console.error('Move error:', err);
@@ -388,6 +475,20 @@ export function WorkspaceExplorer({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
+
+      if (user && accountId !== 'anonymous_dev') {
+        try {
+          await FirestoreClientService.deleteItem(
+            accountId,
+            workspace.workspaceId,
+            filePath,
+            true
+          );
+        } catch (fErr) {
+          console.warn('Direct Firestore delete notice:', fErr);
+        }
+      }
+
       await fetch(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files?path=${encodeURIComponent(
           filePath
@@ -397,7 +498,7 @@ export function WorkspaceExplorer({
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }
       );
-      loadFiles();
+      await loadFiles();
     } catch (err) {
       console.error('Delete error:', err);
     }

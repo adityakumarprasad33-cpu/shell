@@ -251,6 +251,10 @@ export class FilesystemEngine {
     accountId: string = 'anonymous_dev',
     workspaceId: string = 'default'
   ): WorkspaceFile[] {
+    const cacheKey = `${accountId}:${workspaceId}`;
+    if (memoryWorkspaceCache.has(cacheKey)) {
+      return memoryWorkspaceCache.get(cacheKey)!;
+    }
     this.ensureWorkspaceState(accountId, workspaceId);
     const store = loadLocalStore(accountId, workspaceId);
 
@@ -291,7 +295,6 @@ export class FilesystemEngine {
       });
     }
 
-    const cacheKey = `${accountId}:${workspaceId}`;
     memoryWorkspaceCache.set(cacheKey, items);
     return items;
   }
@@ -438,18 +441,7 @@ export class FilesystemEngine {
     return record;
   }
 
-  /**
-   * Creates a file inside a folder (or at root), running validation and chunked storage.
-   */
-  public static async createFile(
-    accountId: string = 'anonymous_dev',
-    workspaceId: string = 'default',
-    relativePath: string,
-    content: string = '',
-    expectedVersion?: number
-  ): Promise<WorkspaceFile> {
-    return this.saveFileSync(accountId, workspaceId, relativePath, content, expectedVersion);
-  }
+
 
   private static ensureFolderHierarchy(accountId: string, workspaceId: string, folderPath: string): void {
     const segments = folderPath.split('/').filter(Boolean);
@@ -505,7 +497,41 @@ export class FilesystemEngine {
     content: string,
     expectedVersion?: number
   ): Promise<WorkspaceFile> {
-    return this.saveFileSync(accountId, workspaceId, relativePath, content, expectedVersion);
+    const record = this.saveFileSync(accountId, workspaceId, relativePath, content, expectedVersion);
+    try {
+      const adminDb = getAdminDb();
+      if (adminDb && accountId !== 'anonymous_dev') {
+        const meta = {
+          fileId: record.fileId!,
+          workspaceId,
+          projectId: 'main',
+          parentFolderId: record.parentFolderId || 'root',
+          name: record.name,
+          path: record.path,
+          type: 'file' as const,
+          languageId: record.languageId,
+          mimeType: record.mimeType,
+          createdAt: record.createdAt || record.updatedAt || new Date().toISOString(),
+          updatedAt: record.updatedAt,
+          createdBy: accountId,
+          updatedBy: accountId,
+        };
+        await saveFileToFirestoreChunks(accountId, workspaceId, meta, content, expectedVersion);
+      }
+    } catch (fsErr) {
+      console.warn('Notice writing to Firestore chunks in saveFile:', fsErr);
+    }
+    return record;
+  }
+
+  public static async createFile(
+    accountId: string = 'anonymous_dev',
+    workspaceId: string = 'default',
+    relativePath: string,
+    content: string = '',
+    expectedVersion?: number
+  ): Promise<WorkspaceFile> {
+    return this.saveFile(accountId, workspaceId, relativePath, content, expectedVersion);
   }
 
   /**
@@ -548,11 +574,40 @@ export class FilesystemEngine {
       updatedAt: now,
       createdBy: accountId,
       updatedBy: accountId,
-    });
+    }).catch(() => {});
 
     const cacheKey = `${accountId}:${workspaceId}`;
     memoryWorkspaceCache.delete(cacheKey);
 
+    return record;
+  }
+
+  public static async createFolderAsync(
+    accountId: string = 'anonymous_dev',
+    workspaceId: string = 'default',
+    relativePath: string
+  ): Promise<WorkspaceFile> {
+    const record = this.createFolder(accountId, workspaceId, relativePath);
+    try {
+      const adminDb = getAdminDb();
+      if (adminDb && accountId !== 'anonymous_dev') {
+        await saveFolderToFirestore(accountId, workspaceId, {
+          folderId: record.folderId!,
+          workspaceId,
+          projectId: 'main',
+          parentFolderId: record.parentFolderId || 'root',
+          name: record.name,
+          path: record.path,
+          type: 'directory',
+          createdAt: record.createdAt || record.updatedAt || new Date().toISOString(),
+          updatedAt: record.updatedAt,
+          createdBy: accountId,
+          updatedBy: accountId,
+        });
+      }
+    } catch (err) {
+      console.warn('Notice saving folder to Firestore in createFolderAsync:', err);
+    }
     return record;
   }
 
@@ -757,7 +812,24 @@ export class FilesystemEngine {
     oldRelativePath: string,
     newRelativePath: string
   ): Promise<RenameResult> {
-    return this.renameFileSync(accountId, workspaceId, oldRelativePath, newRelativePath);
+    const res = this.renameFileSync(accountId, workspaceId, oldRelativePath, newRelativePath);
+    if (res.success && res.item) {
+      try {
+        const adminDb = getAdminDb();
+        if (adminDb && accountId !== 'anonymous_dev') {
+          await updateFileLocationInFirestore(
+            accountId,
+            workspaceId,
+            res.item.fileId || oldRelativePath,
+            res.item.path,
+            res.item.parentFolderId || 'root'
+          );
+        }
+      } catch (err) {
+        console.warn('Notice updating file location in Firestore:', err);
+      }
+    }
+    return res;
   }
 
   /**
@@ -938,6 +1010,16 @@ export class FilesystemEngine {
     relativePath: string,
     recursive: boolean = false
   ): Promise<boolean> {
-    return this.deleteItemSync(accountId, workspaceId, relativePath, recursive);
+    const res = this.deleteItemSync(accountId, workspaceId, relativePath, recursive);
+    try {
+      const adminDb = getAdminDb();
+      if (adminDb && accountId !== 'anonymous_dev') {
+        await deleteFileFromFirestore(accountId, workspaceId, relativePath);
+        await deleteFolderFromFirestore(accountId, workspaceId, relativePath);
+      }
+    } catch (err) {
+      console.warn('Notice deleting item from Firestore in deleteItem:', err);
+    }
+    return res;
   }
 }
