@@ -20,6 +20,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { ReleaseItem } from '@/lib/types/terminal';
+import { safeFetchJson } from '@/lib/safe-json';
 
 export function ReleaseCmsHub() {
   const [adminKey, setAdminKey] = useState('');
@@ -63,18 +64,17 @@ export function ReleaseCmsHub() {
     setLoading(true);
     setAuthError(null);
     try {
-      const res = await fetch('/api/admin/releases', {
+      const res = await safeFetchJson<{ authorized?: boolean; releases?: ReleaseItem[]; error?: string }>('/api/admin/releases', {
         headers: { 'x-super-admin-key': keyToTest },
       });
-      const data = await res.json();
-      if (res.ok && data.authorized) {
+      if (res.ok && res.data?.authorized) {
         setIsAuthenticated(true);
         localStorage.setItem('runix_super_admin_key', keyToTest);
-        setReleases(data.releases || []);
+        setReleases(res.data.releases || []);
         fetchTerminalPreview();
       } else {
         setIsAuthenticated(false);
-        setAuthError(data.error || 'Invalid Super Admin Access Key');
+        setAuthError(res.error || res.data?.error || 'Invalid Super Admin Access Key');
       }
     } catch (err: any) {
       setAuthError('Connection error: ' + err.message);
@@ -96,9 +96,8 @@ export function ReleaseCmsHub() {
 
   const fetchTerminalPreview = async () => {
     try {
-      const res = await fetch('/api/releases?latest=true');
-      const data = await res.json();
-      const r = data.release;
+      const res = await safeFetchJson<{ release?: ReleaseItem }>('/api/releases?latest=true');
+      const r = res.data?.release;
       if (r) {
         setTerminalPreview(`RUNIX TERMINAL v${r.version}  (Official Release)
   Release Date:  ${r.publishedAt}
@@ -114,12 +113,11 @@ export function ReleaseCmsHub() {
   const reloadReleases = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/releases', {
+      const res = await safeFetchJson<{ releases?: ReleaseItem[] }>('/api/admin/releases', {
         headers: { 'x-super-admin-key': adminKey },
       });
-      const data = await res.json();
-      if (data.releases) {
-        setReleases(data.releases);
+      if (res.ok && res.data?.releases) {
+        setReleases(res.data.releases);
         fetchTerminalPreview();
       }
     } finally {

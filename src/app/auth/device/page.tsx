@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Terminal, ShieldCheck, CheckCircle2, ArrowRight } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { safeFetchJson } from '@/lib/safe-json';
 
 function DeviceAuthContent() {
   const searchParams = useSearchParams();
@@ -33,7 +34,7 @@ function DeviceAuthContent() {
 
     try {
       const token = await user.getIdToken();
-      const res = await fetch('/api/auth/device-code', {
+      const res = await safeFetchJson<{ error?: string }>('/api/auth/device-code', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -43,11 +44,10 @@ function DeviceAuthContent() {
         }),
       });
 
-      const data = await res.json();
       if (res.ok) {
         setAuthorized(true);
       } else {
-        setError(data.error || 'Failed to authorize device');
+        setError(res.error || 'Failed to authorize device');
       }
     } catch (err: any) {
       setError(err.message || 'Authorization failed');

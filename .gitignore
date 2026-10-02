@@ -8,6 +8,7 @@
 /.next/
 /out/
 tsconfig.tsbuildinfo
+.netlify/
 
 # Rust / Tauri build artifacts
 src-tauri/target/
@@ -21,10 +22,26 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Environment local files
-.env*.local
+# Environment local files & Secret Keys
 .env
+.env.*
+!.env.example
+
+# Credentials, Private Keys, Service Accounts
+*.pem
+*.key
+*.p12
+*.pfx
+*.pkcs12
+service-account*.json
+firebase-admin*.json
+credentials.json
+client_secret*.json
+id_rsa*
+*.cer
+*.crt
 
 # OS metadata
 .DS_Store
 Thumbs.db
+

@@ -6,6 +6,7 @@ import type { FitAddon as FitAddonType } from 'xterm-addon-fit';
 import { RemoteSandboxProvider } from '@/lib/terminal/execution-provider';
 import { TerminalSession, TerminalSettings } from '@/lib/types/terminal';
 import { useAuth } from '@/lib/auth-context';
+import { safeFetchJson } from '@/lib/safe-json';
 
 interface RunixTerminalProps {
   session: TerminalSession;
@@ -196,8 +197,8 @@ export function RunixTerminal({
       ) {
         termRef.current?.write('\r\n\x1b[90mChecking latest release from Runix infrastructure...\x1b[0m\r\n');
         try {
-          const res = await fetch('/api/releases?latest=true');
-          const data = await res.json();
+          const res = await safeFetchJson<any>('/api/releases?latest=true');
+          const data = res.data || {};
           const r = data.release || {
             version: '0.1.0',
             publishedAt: '2026-10-02',

@@ -21,6 +21,7 @@ import {
   WorkspaceFile,
 } from '@/lib/types/terminal';
 import { identifyLanguage } from '@/lib/runtimes/language-registry';
+import { safeFetchJson } from '@/lib/safe-json';
 
 export default function EditorPage() {
   const { user, terminalAccount, loading } = useAuth();
@@ -40,15 +41,15 @@ export default function EditorPage() {
     const fetchWorkspaces = async () => {
       try {
         const token = await user.getIdToken();
-        const res = await fetch(`/api/workspaces?accountId=${encodeURIComponent(user.uid)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.workspaces?.length > 0) {
-            setWorkspaces(data.workspaces);
-            setActiveWorkspaceId(data.workspaces[0].workspaceId);
+        const res = await safeFetchJson<{ workspaces?: TerminalWorkspace[] }>(
+          `/api/workspaces?accountId=${encodeURIComponent(user.uid)}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
           }
+        );
+        if (res.ok && res.data?.workspaces && res.data.workspaces.length > 0) {
+          setWorkspaces(res.data.workspaces);
+          setActiveWorkspaceId(res.data.workspaces[0].workspaceId);
         }
       } catch (err) {
         console.error('Failed to load workspaces:', err);
@@ -63,13 +64,12 @@ export default function EditorPage() {
     setLoadingFiles(true);
     try {
       const token = await user.getIdToken();
-      const res = await fetch(
+      const res = await safeFetchJson<{ files?: WorkspaceFile[] }>(
         `/api/workspaces/${encodeURIComponent(activeWorkspaceId)}/files?accountId=${encodeURIComponent(user.uid)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if (res.ok) {
-        const data = await res.json();
-        setFiles(data.files || []);
+      if (res.ok && res.data?.files) {
+        setFiles(res.data.files);
       }
     } catch (err) {
       console.error('Failed to load files:', err);

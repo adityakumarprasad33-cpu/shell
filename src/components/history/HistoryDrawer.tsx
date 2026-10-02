@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { TerminalCommandRecord } from '@/lib/types/terminal';
 import { useAuth } from '@/lib/auth-context';
+import { safeFetchJson } from '@/lib/safe-json';
 
 interface HistoryDrawerProps {
   isOpen: boolean;
@@ -37,7 +38,7 @@ export function HistoryDrawer({
     setLoading(true);
     try {
       const token = user ? await user.getIdToken() : '';
-      const res = await fetch(
+      const res = await safeFetchJson<{ history?: TerminalCommandRecord[] }>(
         `/api/history?accountId=${encodeURIComponent(terminalAccount?.accountId || '')}&q=${encodeURIComponent(
           searchQuery
         )}`,
@@ -45,9 +46,8 @@ export function HistoryDrawer({
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }
       );
-      if (res.ok) {
-        const data = await res.json();
-        setHistory(data.history || []);
+      if (res.ok && res.data?.history) {
+        setHistory(res.data.history);
       }
     } catch (err) {
       console.error('History load error:', err);

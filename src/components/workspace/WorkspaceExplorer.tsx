@@ -20,16 +20,22 @@ import {
   Check,
   AlertCircle,
   Edit3,
+  PanelLeftClose,
 } from 'lucide-react';
 import { WorkspaceFile, TerminalWorkspace } from '@/lib/types/terminal';
 import { useAuth } from '@/lib/auth-context';
 import { identifyLanguage } from '@/lib/runtimes/language-registry';
+import { safeFetchJson } from '@/lib/safe-json';
+import { FileIcon } from './FileIcon';
+import { FolderIcon } from './FolderIcon';
 
 interface WorkspaceExplorerProps {
   workspace: TerminalWorkspace;
   onOpenFile: (file: WorkspaceFile) => void;
   activeFilePath?: string;
   refreshTrigger?: number;
+  onCollapse?: () => void;
+  className?: string;
 }
 
 interface TreeNode {
@@ -43,6 +49,8 @@ export function WorkspaceExplorer({
   onOpenFile,
   activeFilePath,
   refreshTrigger,
+  onCollapse,
+  className = '',
 }: WorkspaceExplorerProps) {
   const { user, terminalAccount } = useAuth();
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
@@ -71,15 +79,14 @@ export function WorkspaceExplorer({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
-      const res = await fetch(
+      const result = await safeFetchJson<{ files: WorkspaceFile[] }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files?accountId=${encodeURIComponent(accountId)}`,
         {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }
       );
-      if (res.ok) {
-        const data = await res.json();
-        setFiles(data.files || []);
+      if (result.ok && result.data?.files) {
+        setFiles(result.data.files);
       }
     } catch (err) {
       console.error('Failed to load workspace files:', err);
@@ -143,7 +150,7 @@ export function WorkspaceExplorer({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
-      const res = await fetch(
+      const result = await safeFetchJson<{ file?: WorkspaceFile; error?: string; message?: string }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files`,
         {
           method: 'POST',
@@ -160,8 +167,7 @@ export function WorkspaceExplorer({
         }
       );
 
-      if (res.ok) {
-        const data = await res.json();
+      if (result.ok && result.data) {
         setNewItemName('');
         setIsCreatingFile(false);
         setIsCreatingFolder(false);
@@ -177,12 +183,11 @@ export function WorkspaceExplorer({
 
         await loadFiles();
 
-        if (data.file && data.file.type === 'file') {
-          onOpenFile(data.file);
+        if (result.data.file && result.data.file.type === 'file') {
+          onOpenFile(result.data.file);
         }
       } else {
-        const data = await res.json();
-        alert(data.message || data.error || 'Failed to create item');
+        alert(result.error || result.data?.message || 'Failed to create item');
       }
     } catch (err) {
       console.error('Item creation error:', err);
@@ -205,7 +210,7 @@ export function WorkspaceExplorer({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
-      const res = await fetch(
+      const result = await safeFetchJson<{ item?: WorkspaceFile; error?: string }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files`,
         {
           method: 'POST',
@@ -223,13 +228,12 @@ export function WorkspaceExplorer({
         }
       );
 
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Failed to rename item');
+      if (!result.ok) {
+        alert(result.error || 'Failed to rename item');
       } else {
         await loadFiles();
-        if (file.type === 'file' && activeFilePath === file.path && data.item) {
-          onOpenFile(data.item);
+        if (file.type === 'file' && activeFilePath === file.path && result.data?.item) {
+          onOpenFile(result.data.item);
         }
       }
     } catch (err: any) {
@@ -268,7 +272,7 @@ export function WorkspaceExplorer({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
-      const res = await fetch(
+      const result = await safeFetchJson<{ error?: string }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files`,
         {
           method: 'POST',
@@ -285,9 +289,8 @@ export function WorkspaceExplorer({
         }
       );
 
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Failed to move item');
+      if (!result.ok) {
+        alert(result.error || 'Failed to move item');
       } else {
         // Expand destination folder so moved item is visible
         if (destinationFolder) {
@@ -434,15 +437,14 @@ export function WorkspaceExplorer({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
-      const res = await fetch(
+      const result = await safeFetchJson<{ file?: WorkspaceFile }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files?path=${encodeURIComponent(file.path)}&accountId=${encodeURIComponent(accountId)}`,
         {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }
       );
-      if (res.ok) {
-        const data = await res.json();
-        const content = data.file?.content || '';
+      if (result.ok && result.data?.file) {
+        const content = result.data.file.content || '';
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -471,31 +473,11 @@ export function WorkspaceExplorer({
     });
   };
 
-  const getFileIcon = (fileName: string, isDirectory: boolean) => {
-    if (isDirectory) {
-      return <Folder className="w-3.5 h-3.5 text-[#315EF7]" />;
-    }
-    const lang = identifyLanguage(fileName);
-    if (lang.runCapability) {
-      if (lang.type === 'interpreted' || lang.type === 'shell') {
-        return <FileCode className="w-3.5 h-3.5 text-emerald-400" />;
-      }
-      return <FileCode className="w-3.5 h-3.5 text-amber-400" />;
-    }
-    if (lang.category === 'config' || lang.type === 'config' || lang.type === 'data') {
-      return <FileJson className="w-3.5 h-3.5 text-cyan-400" />;
-    }
-    if (lang.category === 'markup' || lang.type === 'markup') {
-      return <FileText className="w-3.5 h-3.5 text-zinc-300" />;
-    }
-    return <File className="w-3.5 h-3.5 text-zinc-400" />;
-  };
-
   return (
     <aside
-      className={`w-64 bg-[#0E1117] border-r border-white/10 flex flex-col select-none shrink-0 h-full transition-colors ${
+      className={`bg-[#0E1117] border-r border-white/10 flex flex-col select-none shrink-0 h-full transition-colors ${
         dragOver ? 'border-[#315EF7] bg-[#315EF7]/5' : ''
-      }`}
+      } ${className || 'w-64'}`}
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -580,6 +562,16 @@ export function WorkspaceExplorer({
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              className="p-1.5 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-colors ml-0.5"
+              title="Collapse Files Panel"
+              id="collapse-files-panel-btn"
+            >
+              <PanelLeftClose className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -773,7 +765,11 @@ export function WorkspaceExplorer({
                   <span className="w-3 h-3" />
                 )}
 
-                {getFileIcon(file.name, isDir)}
+                {isDir ? (
+                  <FolderIcon folderName={file.name} isOpen={!isCollapsed} size={15} />
+                ) : (
+                  <FileIcon filename={file.name} size={15} />
+                )}
 
                 {isRenaming ? (
                   <input

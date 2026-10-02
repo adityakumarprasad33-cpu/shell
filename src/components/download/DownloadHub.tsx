@@ -14,6 +14,7 @@ import { VerificationSection } from './VerificationSection';
 import { DownloadFaq } from './DownloadFaq';
 import { ChecksumModal } from './ChecksumModal';
 import { EcosystemFooter } from './EcosystemFooter';
+import { safeFetchJson } from '@/lib/safe-json';
 
 export function DownloadHub() {
   const [releases, setReleases] = useState<ReleaseItem[]>([]);
@@ -37,11 +38,10 @@ export function DownloadHub() {
       }
     }
 
-    fetch('/api/releases')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.releases) {
-          setReleases(data.releases);
+    safeFetchJson<{ releases?: ReleaseItem[] }>('/api/releases')
+      .then((res) => {
+        if (res.ok && res.data?.releases) {
+          setReleases(res.data.releases);
         }
       })
       .catch((err) => console.error('Failed to load release manifest:', err))

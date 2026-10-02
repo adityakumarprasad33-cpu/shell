@@ -6,6 +6,8 @@ import { WorkspaceFile, TerminalWorkspace } from '@/lib/types/terminal';
 import { useAuth } from '@/lib/auth-context';
 import { FileCapabilityState } from '@/lib/runtimes/capability-resolver';
 import { identifyLanguage } from '@/lib/runtimes/language-registry';
+import { safeFetchJson } from '@/lib/safe-json';
+import { FileIcon } from './FileIcon';
 
 interface WorkspaceEditorProps {
   file: WorkspaceFile | null;
@@ -13,6 +15,7 @@ interface WorkspaceEditorProps {
   onClose: () => void;
   onRunFile?: (path: string) => void;
   onFileSaved?: (file: WorkspaceFile) => void;
+  className?: string;
 }
 
 export function WorkspaceEditor({
@@ -21,6 +24,7 @@ export function WorkspaceEditor({
   onClose,
   onRunFile,
   onFileSaved,
+  className = '',
 }: WorkspaceEditorProps) {
   const { user, terminalAccount } = useAuth();
   const [content, setContent] = useState('');
@@ -64,14 +68,13 @@ export function WorkspaceEditor({
     });
 
     let active = true;
-    fetch(`/api/capabilities?file=${encodeURIComponent(file.name)}&workspaceId=${encodeURIComponent(workspace.workspaceId)}`)
-      .then((res) => res.json())
-      .then((data: FileCapabilityState) => {
-        if (active && data && !('error' in data)) {
-          setCapabilities(data);
-        }
-      })
-      .catch(() => {});
+    safeFetchJson<FileCapabilityState>(
+      `/api/capabilities?file=${encodeURIComponent(file.name)}&workspaceId=${encodeURIComponent(workspace.workspaceId)}`
+    ).then((result) => {
+      if (active && result.ok && result.data && !('error' in result.data)) {
+        setCapabilities(result.data);
+      }
+    });
 
     return () => {
       active = false;
@@ -86,7 +89,7 @@ export function WorkspaceEditor({
       try {
         const token = user ? await user.getIdToken() : '';
         const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
-        const res = await fetch(
+        const result = await safeFetchJson<{ file?: WorkspaceFile }>(
           `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files?path=${encodeURIComponent(
             file.path
           )}&accountId=${encodeURIComponent(accountId)}`,
@@ -94,9 +97,8 @@ export function WorkspaceEditor({
             headers: token ? { Authorization: `Bearer ${token}` } : {},
           }
         );
-        if (res.ok) {
-          const data = await res.json();
-          setContent(data.file?.content ?? file.content ?? '');
+        if (result.ok && result.data?.file) {
+          setContent(result.data.file.content ?? file.content ?? '');
         } else {
           setContent(file.content ?? '');
         }
@@ -114,7 +116,7 @@ export function WorkspaceEditor({
     try {
       const token = user ? await user.getIdToken() : '';
       const accountId = terminalAccount?.accountId || (user ? user.uid : 'anonymous_dev');
-      const res = await fetch(
+      const result = await safeFetchJson<{ file?: WorkspaceFile; message?: string; error?: string }>(
         `/api/workspaces/${encodeURIComponent(workspace.workspaceId)}/files`,
         {
           method: 'POST',
@@ -129,16 +131,14 @@ export function WorkspaceEditor({
           }),
         }
       );
-      if (res.ok) {
-        const data = await res.json();
+      if (result.ok) {
         setSaveError(null);
         setIsSaved(true);
         setTimeout(() => setIsSaved(false), 2000);
-        onFileSaved?.(data.file || { ...file, content });
+        onFileSaved?.(result.data?.file || { ...file, content });
         return true;
       } else {
-        const data = await res.json();
-        setSaveError(data.message || data.error || 'Save failed');
+        setSaveError(result.error || result.data?.message || 'Save failed');
         return false;
       }
     } catch (err: any) {
@@ -165,11 +165,11 @@ export function WorkspaceEditor({
   if (!file) return null;
 
   return (
-    <div className="w-96 border-l border-white/10 bg-[#0E1117] flex flex-col h-full shrink-0 select-none z-10 animate-in slide-in-from-right-4 duration-200">
+    <div className={`border-l border-white/10 bg-[#0E1117] flex flex-col h-full shrink-0 select-none z-10 animate-in slide-in-from-right-4 duration-200 ${className || 'w-96'}`}>
       {/* Editor Header */}
       <div className="h-10 px-3 border-b border-white/10 flex items-center justify-between bg-[#131722]">
         <div className="flex items-center gap-2 truncate">
-          <FileCode className="w-3.5 h-3.5 text-[#315EF7]" />
+          <FileIcon filename={file.name} size={15} />
           <span className="font-mono text-xs text-white font-medium truncate">{file.name}</span>
         </div>
 

@@ -1,4 +1,5 @@
 import { ExecutionMode, ShellType, TerminalSession } from '../types/terminal';
+import { safeFetchJson, safeParseResponse } from '../safe-json';
 
 export interface ExecuteOptions {
   sessionId: string;
@@ -51,12 +52,12 @@ export class RemoteSandboxProvider implements TerminalExecutionProvider {
       body: JSON.stringify(params),
     });
 
-    if (!res.ok) {
-      throw new Error(`Failed to create remote terminal session: ${res.statusText}`);
+    const result = await safeParseResponse<{ session: TerminalSession }>(res);
+    if (!result.ok || !result.data?.session) {
+      throw new Error(result.error || `Failed to create remote terminal session: ${res.statusText}`);
     }
 
-    const data = await res.json();
-    return data.session;
+    return result.data.session;
   }
 
   async execute(options: ExecuteOptions): Promise<{ cancel: () => void }> {
@@ -212,10 +213,11 @@ export class RemoteSandboxProvider implements TerminalExecutionProvider {
 
   async reconnect(sessionId: string): Promise<TerminalSession | null> {
     try {
-      const res = await fetch(`/api/terminal/session?sessionId=${encodeURIComponent(sessionId)}`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      return data.session;
+      const result = await safeFetchJson<{ session: TerminalSession }>(
+        `/api/terminal/session?sessionId=${encodeURIComponent(sessionId)}`
+      );
+      if (!result.ok || !result.data?.session) return null;
+      return result.data.session;
     } catch {
       return null;
     }

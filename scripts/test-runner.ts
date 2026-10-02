@@ -42,6 +42,8 @@ import { TerminalSessionManager } from '../src/lib/terminal/session-manager';
 import { RunixPathResolver } from '../src/lib/workspace/path-resolver';
 import { RunixFileResolver } from '../src/lib/workspace/file-resolver';
 import { materializeExecutionSandbox, cleanupExecutionSandbox } from '../src/lib/terminal/sandbox-runner';
+import { RunixFileIconRegistry, RunixFolderIconRegistry } from '../src/lib/workspace/icon-registry';
+import { safeParseResponse } from '../src/lib/safe-json';
 import fs from 'fs';
 import path from 'path';
 
@@ -1179,6 +1181,144 @@ async function runTests() {
       }
     );
     assert(cliOut3.includes('DUPLICATE_PATH_FIX_VERIFIED'), '3. Inside test: runix run "main.py" resolves and executes relative to CWD cleanly');
+  }
+
+  // 33. Universal File & Folder Icon Registry Test Suite (Part B)
+  console.log('\n\x1b[1m[33] Universal File & Folder Icon Registry Test Suite (Part B)\x1b[0m');
+  {
+    // Special Filenames
+    const dockerIcon = RunixFileIconRegistry.resolve('Dockerfile');
+    assert(dockerIcon.iconId === 'docker' && dockerIcon.color === '#2496ED', 'ICON-001: Dockerfile resolves to Docker icon');
+
+    const makefileIcon = RunixFileIconRegistry.resolve('Makefile');
+    assert(makefileIcon.iconId === 'makefile', 'ICON-002: Makefile resolves to makefile icon');
+
+    const cmakeIcon = RunixFileIconRegistry.resolve('CMakeLists.txt');
+    assert(cmakeIcon.iconId === 'cmake', 'ICON-003: CMakeLists.txt resolves to cmake icon');
+
+    // Manifests
+    const pkgIcon = RunixFileIconRegistry.resolve('package.json');
+    assert(pkgIcon.iconId === 'npm' && pkgIcon.category === 'manifest', 'ICON-004: package.json resolves to npm manifest icon');
+
+    const cargoIcon = RunixFileIconRegistry.resolve('Cargo.toml');
+    assert(cargoIcon.iconId === 'cargo' && cargoIcon.category === 'manifest', 'ICON-005: Cargo.toml resolves to cargo manifest icon');
+
+    const goModIcon = RunixFileIconRegistry.resolve('go.mod');
+    assert(goModIcon.iconId === 'go-mod' && goModIcon.category === 'manifest', 'ICON-006: go.mod resolves to go-mod manifest icon');
+
+    // Language Extensions
+    const pyIcon = RunixFileIconRegistry.resolve('script.py');
+    assert(pyIcon.iconId === 'python' && pyIcon.color === '#3776AB', 'ICON-007: .py resolves to python code icon');
+
+    const javaIcon = RunixFileIconRegistry.resolve('Main.java');
+    assert(javaIcon.iconId === 'java' && javaIcon.color === '#ED8B00', 'ICON-008: .java resolves to java code icon');
+
+    const cppIcon = RunixFileIconRegistry.resolve('solver.cpp');
+    assert(cppIcon.iconId === 'cpp' && cppIcon.color === '#00599C', 'ICON-009: .cpp resolves to cpp code icon');
+
+    const tsIcon = RunixFileIconRegistry.resolve('engine.ts');
+    assert(tsIcon.iconId === 'typescript' && tsIcon.color === '#3178C6', 'ICON-010: .ts resolves to typescript code icon');
+
+    const rsIcon = RunixFileIconRegistry.resolve('lib.rs');
+    assert(rsIcon.iconId === 'rust', 'ICON-011: .rs resolves to rust code icon');
+
+    // Dotfiles & Config
+    const envIcon = RunixFileIconRegistry.resolve('.env.local');
+    assert(envIcon.iconId === 'env' && envIcon.category === 'config', 'ICON-012: .env.local resolves to env config icon');
+
+    const gitignoreIcon = RunixFileIconRegistry.resolve('.gitignore');
+    assert(gitignoreIcon.iconId === 'git', 'ICON-013: .gitignore resolves to git icon');
+
+    // Folder Resolution
+    const srcFolder = RunixFolderIconRegistry.resolve('src', false);
+    assert(srcFolder.iconId === 'folder-src' && !srcFolder.isOpen, 'FICON-001: src folder resolves to specialized source folder');
+
+    const srcFolderOpen = RunixFolderIconRegistry.resolve('src', true);
+    assert(srcFolderOpen.isOpen === true, 'FICON-002: src folder open state correctly toggles isOpen');
+
+    const componentsFolder = RunixFolderIconRegistry.resolve('components', false);
+    assert(componentsFolder.iconId === 'folder-components', 'FICON-003: components folder resolves to component folder');
+
+    const testsFolder = RunixFolderIconRegistry.resolve('tests', false);
+    assert(testsFolder.iconId === 'folder-tests', 'FICON-004: tests folder resolves to tests folder');
+
+    const buildFolder = RunixFolderIconRegistry.resolve('build', false);
+    assert(buildFolder.iconId === 'folder-build', 'FICON-005: build folder resolves to build archive folder');
+
+    const defaultFolder = RunixFolderIconRegistry.resolve('my_custom_folder', false);
+    assert(defaultFolder.iconId === 'folder-default', 'FICON-006: standard folder resolves to default folder');
+  }
+
+  // 34. Safe JSON & Non-JSON Error Recovery (SyntaxError Prevention)
+  console.log('\n\x1b[1m[34] Safe JSON & Non-JSON Error Recovery (SyntaxError Prevention)\x1b[0m');
+  {
+    // Simulate 500 "Internal Server Error" plaintext response
+    const mock500Response = new Response('Internal Server Error', {
+      status: 500,
+      statusText: 'Internal Server Error',
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    });
+
+    const res500 = await safeParseResponse(mock500Response);
+    assert(!res500.ok, 'SAFE-JSON-001: 500 response correctly parsed as ok=false');
+    assert(res500.status === 500, 'SAFE-JSON-002: 500 status preserved');
+    assert(res500.error === 'Internal Server Error', 'SAFE-JSON-003: Plaintext error message captured without throwing SyntaxError');
+
+    // Simulate 404 HTML response
+    const mock404Html = new Response('<!DOCTYPE html><html><body>404 Not Found</body></html>', {
+      status: 404,
+      statusText: 'Not Found',
+      headers: { 'content-type': 'text/html' },
+    });
+
+    const res404 = await safeParseResponse(mock404Html);
+    assert(!res404.ok && res404.status === 404, 'SAFE-JSON-004: HTML 404 handled gracefully without SyntaxError');
+
+    // Simulate valid JSON response
+    const mock200Json = new Response(JSON.stringify({ success: true, count: 42 }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const res200 = await safeParseResponse<{ success: boolean; count: number }>(mock200Json);
+    assert(res200.ok && res200.data?.count === 42, 'SAFE-JSON-005: Valid JSON response parsed cleanly');
+  }
+
+  // 35. Workspace Manager Clean Initialization & Isolation
+  console.log('\n\x1b[1m[35] Workspace Manager Clean Initialization & Isolation\x1b[0m');
+  {
+    const wsTestAcc = `ws_mgr_acc_${Date.now()}`;
+    const newWsId = `ws_${Date.now()}_clean`;
+
+    // Initialize workspace
+    await FilesystemEngine.ensureWorkspaceState(wsTestAcc, newWsId);
+    const files = FilesystemEngine.getWorkspaceFiles(wsTestAcc, newWsId);
+
+    assert(files.length === 1, `WS-CRUD-001: Newly initialized workspace contains exactly 1 file (actual: ${files.length})`);
+    assert(files[0].name === 'runix-command.txt', `WS-CRUD-002: Only runix-command.txt is present (actual: ${files[0].name})`);
+    assert(!files.some((f) => f.name.includes('demo') || f.name.includes('sample')), 'WS-CRUD-003: Strict zero demo files rule enforced');
+
+    // Create file in new workspace
+    await FilesystemEngine.createFile(wsTestAcc, newWsId, 'project.py', 'print("Isolated")');
+    const updatedFiles = FilesystemEngine.getWorkspaceFiles(wsTestAcc, newWsId);
+    assert(updatedFiles.some((f) => f.path === 'project.py'), 'WS-CRUD-004: File creation in isolated workspace succeeded');
+
+    // Verify default workspace remains untouched
+    const defaultFiles = FilesystemEngine.getWorkspaceFiles(wsTestAcc, 'default');
+    assert(!defaultFiles.some((f) => f.path === 'project.py'), 'WS-CRUD-005: Workspace isolation strictly maintained (no leak between workspaces)');
+  }
+
+  // 36. Git Protection & Secret Leak Audit (Part C)
+  console.log('\n\x1b[1m[36] Git Protection & Secret Leak Audit (Part C)\x1b[0m');
+  {
+    const gitignorePath = path.join(process.cwd(), '.gitignore');
+    const gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
+
+    assert(gitignoreContent.includes('.env'), 'SEC-001: .gitignore contains .env');
+    assert(gitignoreContent.includes('.env.*'), 'SEC-002: .gitignore contains .env.*');
+    assert(gitignoreContent.includes('!.env.example'), 'SEC-003: .gitignore safely preserves !.env.example');
+    assert(gitignoreContent.includes('*.pem') && gitignoreContent.includes('*.key'), 'SEC-004: .gitignore excludes private keys (*.pem, *.key)');
+    assert(gitignoreContent.includes('service-account*.json'), 'SEC-005: .gitignore excludes service-account*.json');
   }
 
   // Summary
