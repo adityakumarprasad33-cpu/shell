@@ -20,6 +20,9 @@ import { resolveFileExecution, detectProjectType } from '../runtimes/resolver';
 import { createWorkspacePipeline } from '../runtimes/builder';
 import { RunixPathResolver } from '../workspace/path-resolver';
 import { RunixFileResolver } from '../workspace/file-resolver';
+import { resolveFileCapabilities } from '../runtimes/capability-resolver';
+import { discoverAllRuntimes, discoverRuntime } from '../runtimes/discovery';
+import { NativeCoreAdapter } from '../runtimes/native-core-adapter';
 
 export interface CommandContext {
   sessionId: string;
@@ -653,25 +656,38 @@ export async function processTerminalCommand(
       const targetFile =
         resolveTargetFile(accountId, workspaceId, rawTarget, session.relativeCwd) ||
         rawTarget.replace(/^["']|["']$/g, '');
-      const detected = detectFileLanguage(targetFile);
-      const isVerified = detected.runtime?.verificationStatus === 'PASS';
-      const statusColor = isVerified ? '\x1b[32m' : '\x1b[33m';
+
+      const caps = await resolveFileCapabilities(targetFile, session.currentDirectory);
+      const isVerified = caps.verificationStatus === 'VERIFIED';
+      const isAvailable = caps.runtimeAvailable;
 
       print(`\x1b[1mLANGUAGE & RUNTIME DETECTION\x1b[0m\r\n`);
       print(`\x1b[90m--------------------------------------------------\x1b[0m\r\n`);
       print(`  Target File:     \x1b[36m${targetFile}\x1b[0m\r\n`);
-      print(`  Language:        \x1b[1;37m${detected.displayName}\x1b[0m (${detected.languageId})\r\n`);
-      print(`  Category:        ${detected.category}\r\n`);
-      print(`  Editor Mode:     ${detected.editorMode}\r\n`);
-      print(`  Runtime ID:      \x1b[33m${detected.runtimeId || 'none'}\x1b[0m\r\n`);
-      print(`  Classification:  ${detected.fileType}\r\n`);
-      print(`  Registry Status: ${statusColor}${detected.runtime?.status || 'unregistered'}\x1b[0m\r\n`);
-      print(`  Host Execution:  ${isVerified ? '\x1b[32mVERIFIED (PASS)\x1b[0m' : '\x1b[31mNOT VERIFIED / COMING SOON\x1b[0m'}\r\n`);
-      if (detected.runtime?.runCommand) {
-        print(`  Run Command:     \x1b[90m${detected.runtime.runCommand}\x1b[0m\r\n`);
+      print(`  Language:        \x1b[1;37m${caps.languageName}\x1b[0m (${caps.languageId})\r\n`);
+      print(`  Category:        ${caps.category}\r\n`);
+      print(`  Editor Mode:     ${caps.editorLanguage}\r\n`);
+      print(`  Runtime ID:      \x1b[33m${caps.runtimeId || 'none'}\x1b[0m\r\n`);
+      if (caps.runtimeVersion) {
+        print(`  Runtime Version: ${caps.runtimeVersion}\r\n`);
       }
-      if (detected.runtime?.buildCommand) {
-        print(`  Build Command:   \x1b[90m${detected.runtime.buildCommand}\x1b[0m\r\n`);
+      if (caps.compilerExecutable || caps.languageId === 'java') {
+        const compStatus = caps.compilerAvailable ? '\x1b[32mAVAILABLE\x1b[0m' : '\x1b[31mUNAVAILABLE\x1b[0m';
+        print(`  Compiler:        ${caps.compilerExecutable || 'javac'} (${compStatus})\r\n`);
+      }
+      const runStatus = caps.capabilities.run ? '\x1b[32mAVAILABLE\x1b[0m' : '\x1b[31mUNAVAILABLE\x1b[0m';
+      const buildStatus = caps.capabilities.build ? '\x1b[32mAVAILABLE\x1b[0m' : '\x1b[31mUNAVAILABLE\x1b[0m';
+      print(`  Run Capability:  ${runStatus}\r\n`);
+      print(`  Build Capability:${buildStatus}\r\n`);
+      print(`  Verification:    ${isVerified ? '\x1b[32mVERIFIED (PASS)\x1b[0m' : (isAvailable ? '\x1b[33mAVAILABLE (Pending smoke test)\x1b[0m' : '\x1b[31mUNAVAILABLE\x1b[0m')}\r\n`);
+      if (caps.statusReason) {
+        print(`  Status Reason:   \x1b[33m${caps.statusReason}\x1b[0m\r\n`);
+      }
+      if (caps.executionConfig?.runCommand) {
+        print(`  Run Command:     \x1b[90m${caps.executionConfig.runCommand}\x1b[0m\r\n`);
+      }
+      if (caps.executionConfig?.compileCommand) {
+        print(`  Build Command:   \x1b[90m${caps.executionConfig.compileCommand}\x1b[0m\r\n`);
       }
       return exit(0);
     }
@@ -712,7 +728,6 @@ export async function processTerminalCommand(
     }
 
     if (sub === 'doctor') {
-      const stats = getRegistryStatistics();
       print(`\x1b[1;37mRUNIX HOST ENVIRONMENT & VERIFICATION AUDIT\x1b[0m\r\n`);
       print(`\x1b[90mChecking installed compilers, interpreters, storage, and security boundaries...\x1b[0m\r\n\r\n`);
 
@@ -722,10 +737,97 @@ export async function processTerminalCommand(
       print(`  \x1b[32m[PASS]\x1b[0m Secret Redaction:   Active (API keys, JWT, passwords automatically stripped)\r\n`);
       print(`  \x1b[32m[PASS]\x1b[0m Workspace Storage:  Active (${workspaceDir})\r\n`);
       print(`  \x1b[32m[PASS]\x1b[0m Working Directory:  ${session.currentDirectory}\r\n`);
-      print(`  \x1b[32m[PASS]\x1b[0m Memory Limit:       512 MB per session\r\n`);
-      print(`  \x1b[32m[PASS]\x1b[0m Execution Timeout:  30 seconds (configurable)\r\n`);
-      print(`  \x1b[32m[PASS]\x1b[0m Runtime Registry:   ${stats.totalRegisteredEnvironments} definitions loaded (${stats.verifiedCount} verified)\r\n`);
-      print(`\r\n\x1b[1;32mSystem status: ALL PRODUCTION CONSTRAINTS SATISFIED.\x1b[0m\r\n`);
+
+      if (NativeCoreAdapter.isAvailable()) {
+        print(`  \x1b[32m[PASS]\x1b[0m Native Core (C++20): Active (${NativeCoreAdapter.getBinaryPath()})\r\n`);
+      } else {
+        print(`  \x1b[33m[INFO]\x1b[0m Native Core (C++20): TypeScript bridge active\r\n`);
+      }
+
+      print(`\r\n\x1b[1;37mTOOLCHAIN DISCOVERY AUDIT\x1b[0m\r\n`);
+      const allRuntimes = await discoverAllRuntimes(true);
+      let anyRequiredMissing = false;
+
+      // Java check
+      const java = allRuntimes['java'];
+      const javaRt = java?.tools['runtime'];
+      const javac = java?.tools['compiler'];
+      if (javaRt && (javaRt.state === 'AVAILABLE' || javaRt.state === 'VERIFIED')) {
+        print(`  \x1b[32m[PASS]\x1b[0m Java Runtime (java):   ${javaRt.version || 'installed'}\r\n`);
+      } else {
+        print(`  \x1b[31m[FAIL]\x1b[0m Java Runtime (java):   UNAVAILABLE\r\n`);
+      }
+
+      if (javac && (javac.state === 'AVAILABLE' || javac.state === 'VERIFIED')) {
+        print(`  \x1b[32m[PASS]\x1b[0m Java Compiler (javac): ${javac.version || 'installed'}\r\n`);
+      } else {
+        print(`  \x1b[31m[FAIL]\x1b[0m Java Compiler (javac): UNAVAILABLE\r\n`);
+        anyRequiredMissing = true;
+      }
+
+      const javaBuildBadge = (javac && (javac.state === 'AVAILABLE' || javac.state === 'VERIFIED')) ? '\x1b[32mAVAILABLE\x1b[0m' : '\x1b[31mUNAVAILABLE\x1b[0m';
+      print(`  \x1b[90m▸ Java Build Capability: ${javaBuildBadge}\x1b[0m\r\n`);
+
+      // Python check
+      const python = allRuntimes['python'];
+      const pyInterp = python?.tools['interpreter'];
+      if (pyInterp && (pyInterp.state === 'AVAILABLE' || pyInterp.state === 'VERIFIED')) {
+        print(`  \x1b[32m[PASS]\x1b[0m Python Interpreter:    ${pyInterp.version || 'installed'}\r\n`);
+      } else {
+        print(`  \x1b[31m[FAIL]\x1b[0m Python Interpreter:    UNAVAILABLE\r\n`);
+        anyRequiredMissing = true;
+      }
+
+      // C / GCC
+      const cLang = allRuntimes['c'];
+      const gcc = cLang?.tools['compiler'];
+      if (gcc && (gcc.state === 'AVAILABLE' || gcc.state === 'VERIFIED')) {
+        print(`  \x1b[32m[PASS]\x1b[0m C Compiler (GCC):      ${gcc.version || 'installed'}\r\n`);
+      } else {
+        print(`  \x1b[33m[INFO]\x1b[0m C Compiler (GCC):      UNAVAILABLE\r\n`);
+      }
+
+      // C++ / G++
+      const cppLang = allRuntimes['cpp'];
+      const gpp = cppLang?.tools['compiler'];
+      if (gpp && (gpp.state === 'AVAILABLE' || gpp.state === 'VERIFIED')) {
+        print(`  \x1b[32m[PASS]\x1b[0m C++ Compiler (G++):    ${gpp.version || 'installed'}\r\n`);
+      } else {
+        print(`  \x1b[33m[INFO]\x1b[0m C++ Compiler (G++):    UNAVAILABLE\r\n`);
+      }
+
+      // Rust
+      const rust = allRuntimes['rust'];
+      const rustc = rust?.tools['compiler'];
+      if (rustc && (rustc.state === 'AVAILABLE' || rustc.state === 'VERIFIED')) {
+        print(`  \x1b[32m[PASS]\x1b[0m Rust Compiler (rustc): ${rustc.version || 'installed'}\r\n`);
+      } else {
+        print(`  \x1b[33m[INFO]\x1b[0m Rust Compiler (rustc): UNAVAILABLE\r\n`);
+      }
+
+      // Go
+      const go = allRuntimes['go'];
+      const goTool = go?.tools['compiler'];
+      if (goTool && (goTool.state === 'AVAILABLE' || goTool.state === 'VERIFIED')) {
+        print(`  \x1b[32m[PASS]\x1b[0m Go Toolchain:          ${goTool.version || 'installed'}\r\n`);
+      } else {
+        print(`  \x1b[33m[INFO]\x1b[0m Go Toolchain:          UNAVAILABLE\r\n`);
+      }
+
+      // Lua
+      const lua = allRuntimes['lua'];
+      const luaTool = lua?.tools['interpreter'];
+      if (luaTool && (luaTool.state === 'AVAILABLE' || luaTool.state === 'VERIFIED')) {
+        print(`  \x1b[32m[PASS]\x1b[0m Lua Interpreter:       ${luaTool.version || 'installed'}\r\n`);
+      } else {
+        print(`  \x1b[33m[INFO]\x1b[0m Lua Interpreter:       UNAVAILABLE\r\n`);
+      }
+
+      if (anyRequiredMissing) {
+        print(`\r\n\x1b[1;33mSystem status: ATTENTION REQUIRED: Some language toolchains are unavailable.\x1b[0m\r\n`);
+      } else {
+        print(`\r\n\x1b[1;32mSystem status: ALL RUNTIME VERIFICATION CHECKS PASSED.\x1b[0m\r\n`);
+      }
       return exit(0);
     }
 
@@ -747,6 +849,25 @@ export async function processTerminalCommand(
 
       if (!resolved) {
         printErr(`runix: file "${cleanTarget}" does not exist in workspace\r\n`);
+        return exit(1);
+      }
+
+      // PRE-FLIGHT CHECK (Strict Section 21, 48)
+      const caps = await resolveFileCapabilities(resolved.name, session.currentDirectory);
+      if (!caps.capabilities.run) {
+        printErr(`\r\n\x1b[1;31m[runix:run] Pre-flight Check FAILED: Run capability UNAVAILABLE\x1b[0m\r\n`);
+        printErr(`  Language:              \x1b[1;37m${caps.languageName}\x1b[0m (${caps.languageId})\r\n`);
+        printErr(`  Required Runtime:      \x1b[33m${caps.runtimeId || 'runtime'}\x1b[0m\r\n`);
+        printErr(`  Runtime Status:        \x1b[31m${caps.runtimeAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}\x1b[0m\r\n`);
+        if (caps.compilerExecutable || caps.languageId === 'java') {
+          printErr(`  Required Compiler:     \x1b[33m${caps.compilerExecutable || 'javac'}\x1b[0m\r\n`);
+          printErr(`  Compiler Status:       \x1b[31m${caps.compilerAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}\x1b[0m\r\n`);
+        }
+        printErr(`  Execution Environment: ${process.platform} ${process.arch} (${process.release?.name || 'standard'})\r\n`);
+        if (caps.statusReason) {
+          printErr(`  Reason:                ${caps.statusReason}\r\n`);
+        }
+        printErr(`  Suggested Action:      Install/provision verified toolchain in the execution environment.\r\n\r\n`);
         return exit(1);
       }
 
@@ -819,6 +940,29 @@ export async function processTerminalCommand(
 
     if (sub === 'build') {
       const allFiles = FilesystemEngine.getWorkspaceFiles(accountId, workspaceId);
+      const rawTarget = args[2];
+      const target = rawTarget
+        ? resolveTargetFile(accountId, workspaceId, rawTarget, session.relativeCwd) ||
+          rawTarget.replace(/^["']|["']$/g, '')
+        : undefined;
+
+      // PRE-FLIGHT CHECK (Strict Section 20, 21, 48)
+      if (target) {
+        const caps = await resolveFileCapabilities(target, session.currentDirectory);
+        if (!caps.capabilities.build) {
+          printErr(`\r\n\x1b[1;31m[runix:build] Pre-flight Check FAILED: Build capability UNAVAILABLE\x1b[0m\r\n`);
+          printErr(`  Language:              \x1b[1;37m${caps.languageName}\x1b[0m (${caps.languageId})\r\n`);
+          printErr(`  Required Compiler:     \x1b[33m${caps.compilerExecutable || 'compiler'}\x1b[0m\r\n`);
+          printErr(`  Compiler Status:       \x1b[31m${caps.compilerAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}\x1b[0m\r\n`);
+          printErr(`  Execution Environment: ${process.platform} ${process.arch} (${process.release?.name || 'standard'})\r\n`);
+          if (caps.statusReason) {
+            printErr(`  Reason:                ${caps.statusReason}\r\n`);
+          }
+          printErr(`  Suggested Action:      Install/provision verified toolchain in the execution environment.\r\n\r\n`);
+          return exit(1);
+        }
+      }
+
       const filesToMaterialize = await Promise.all(
         allFiles.filter((f) => f.type === 'file').map(async (f) => {
           const fileObj = await FilesystemEngine.readFile(accountId, workspaceId, f.path);
@@ -829,11 +973,6 @@ export async function processTerminalCommand(
       const runnerRoot = materializeExecutionSandbox(execId, filesToMaterialize);
 
       const filenames = allFiles.map((f) => f.name);
-      const rawTarget = args[2];
-      const target = rawTarget
-        ? resolveTargetFile(accountId, workspaceId, rawTarget, session.relativeCwd) ||
-          rawTarget.replace(/^["']|["']$/g, '')
-        : undefined;
 
       const effectiveExecDir = session.relativeCwd
         ? path.join(runnerRoot, ...session.relativeCwd.split('/'))

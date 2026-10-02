@@ -56,20 +56,40 @@ export function resolveFileExecution(
     return null;
   }
 
+  if (detected.languageId === 'java' || runtime.id === 'java') {
+    const { JavaEngine } = require('./java-engine');
+    const plan = JavaEngine.resolveExecutionPlan(cleanName, [], workingDirectory);
+    return {
+      runtimeId: runtime.id,
+      runtime,
+      compileCommand: plan.compileCommand,
+      runCommand: plan.runCommand,
+      testCommand: runtime.testCommand,
+      debugCommand: runtime.debugCommand,
+      workingDirectory,
+      env: {
+        PATH: getEffectiveSystemPath(),
+        Path: getEffectiveSystemPath(),
+      },
+      isVerified: true,
+    };
+  }
+
   const className = path.basename(cleanName).replace(/\.[^.]+$/, '');
+  const cleanOutput = path.posix.join('build', className);
 
   // Build the run command with file and class substitution
   let runCommand = runtime.runCommand || '';
   runCommand = runCommand.replace(/\{className\}/g, className);
   runCommand = runCommand.replace(/\{file\}/g, cleanName);
-  runCommand = runCommand.replace(/\{output\}/g, cleanName.replace(/\.[^.]+$/, ''));
+  runCommand = runCommand.replace(/\{output\}/g, cleanOutput);
 
   let compileCommand: string | undefined;
   if (runtime.buildCommand) {
     compileCommand = runtime.buildCommand
       .replace(/\{className\}/g, className)
       .replace(/\{file\}/g, cleanName)
-      .replace(/\{output\}/g, cleanName.replace(/\.[^.]+$/, ''));
+      .replace(/\{output\}/g, cleanOutput);
   }
 
   return {

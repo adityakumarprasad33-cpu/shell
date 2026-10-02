@@ -15,6 +15,7 @@
 import { identifyLanguage, LanguageDefinition, RUNIX_LANGUAGE_REGISTRY } from './language-registry';
 import { discoverRuntime, getEffectiveSystemPath, DiscoveredRuntime } from './discovery';
 import { RUNTIME_REGISTRY } from './registry';
+import { JavaEngine } from './java-engine';
 
 export interface FileCapabilityState {
   filename: string;
@@ -27,6 +28,9 @@ export interface FileCapabilityState {
   runtimeName?: string;
   runtimeVersion?: string;
   runtimeExecutable?: string;
+  compilerExecutable?: string;
+  compilerVersion?: string;
+  compilerAvailable?: boolean;
   runtimeAvailable: boolean;
   verificationStatus: 'CHECKING' | 'VERIFIED' | 'AVAILABLE' | 'UNAVAILABLE' | 'BROKEN' | 'NOT_IMPLEMENTED' | 'UNKNOWN';
   statusReason?: string;
@@ -55,6 +59,7 @@ export interface FileCapabilityState {
 
 /**
  * Resolves full capability state for a file within a workspace.
+ * Real host discovery determines capability — never static registry data.
  */
 export async function resolveFileCapabilities(
   filename: string,
@@ -91,35 +96,69 @@ export async function resolveFileCapabilities(
     };
   }
 
-  // Check host runtime discovery
+  // Check real host runtime and compiler discovery
   const discovery = await discoverRuntime(runtimeId);
   const runtimeDef = RUNTIME_REGISTRY[runtimeId];
 
-  const isServerless = typeof process !== 'undefined' && (
-    !!process.env.NETLIFY ||
-    !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
-    !!process.env.LAMBDA_TASK_ROOT ||
-    !!process.env.VERCEL ||
-    (typeof process.cwd === 'function' && (
-      process.cwd().startsWith('/var/task') ||
-      process.cwd().startsWith('/opt')
-    ))
-  );
+  const compilerTool = discovery.tools['compiler'];
+  const runtimeTool = discovery.tools['runtime'];
+  const interpreterTool = discovery.tools['interpreter'];
 
-  const isVerified = discovery.state === 'VERIFIED' || (isServerless && runtimeDef?.verificationStatus === 'PASS');
-  const isAvailable = discovery.state === 'AVAILABLE' || discovery.state === 'VERIFIED' || (isServerless && runtimeDef?.status === 'available');
+  const hasCompiler = Boolean(compilerTool && (compilerTool.state === 'AVAILABLE' || compilerTool.state === 'VERIFIED'));
+  const hasRuntime = Boolean(runtimeTool && (runtimeTool.state === 'AVAILABLE' || runtimeTool.state === 'VERIFIED'));
+  const hasInterpreter = Boolean(interpreterTool && (interpreterTool.state === 'AVAILABLE' || interpreterTool.state === 'VERIFIED'));
 
-  // Format execution commands
-  let runCommand = language.defaultRunCommand || runtimeDef?.runCommand || `${discovery.executableName} "{file}"`;
-  runCommand = runCommand.replace(/\{file\}/g, filename);
-  runCommand = runCommand.replace(/\{output\}/g, filename.replace(/\.[^.]+$/, ''));
-
+  let canBuild = false;
+  let canRun = false;
+  let statusReason: string | undefined;
   let compileCommand: string | undefined;
-  if (language.defaultBuildCommand || runtimeDef?.buildCommand) {
-    const rawBuild = language.defaultBuildCommand || runtimeDef?.buildCommand || '';
-    compileCommand = rawBuild
+  let runCommand = language.defaultRunCommand || runtimeDef?.runCommand || `${discovery.executableName} "{file}"`;
+
+  // Java-specific handling (Strict Section 7-11)
+  if (language.languageId === 'java' || runtimeId === 'java') {
+    const preflight = await JavaEngine.preflightCheck();
+    canBuild = preflight.canCompile;
+    canRun = preflight.canCompile && preflight.canExecute;
+    statusReason = preflight.diagnostic;
+
+    const javaPlan = JavaEngine.resolveExecutionPlan(filename, [], workspaceDir || process.cwd());
+    compileCommand = javaPlan.compileCommand;
+    runCommand = javaPlan.runCommand;
+  } else if (language.type === 'compiled' || discovery.category === 'compiled') {
+    canBuild = hasCompiler;
+    canRun = hasCompiler;
+    if (!hasCompiler) {
+      const compName = compilerTool?.executableName || 'compiler';
+      statusReason = `${language.displayName} compiler (${compName}) is unavailable in current execution environment.`;
+    }
+    const cleanOutput = filename.replace(/\.[^.]+$/, '');
+    if (language.defaultBuildCommand || runtimeDef?.buildCommand) {
+      compileCommand = (language.defaultBuildCommand || runtimeDef?.buildCommand || '')
+        .replace(/\{file\}/g, filename)
+        .replace(/\{output\}/g, cleanOutput);
+    }
+    runCommand = (language.defaultRunCommand || runtimeDef?.runCommand || `"{output}"`)
       .replace(/\{file\}/g, filename)
-      .replace(/\{output\}/g, filename.replace(/\.[^.]+$/, ''));
+      .replace(/\{output\}/g, cleanOutput);
+  } else if (language.type === 'hybrid' || runtimeId === 'typescript') {
+    canRun = hasRuntime || hasInterpreter;
+    canBuild = hasCompiler;
+    if (!canRun && !canBuild) {
+      statusReason = `TypeScript runner (tsx/tsc) is unavailable in current execution environment.`;
+    }
+    runCommand = runCommand.replace(/\{file\}/g, filename);
+    if (language.defaultBuildCommand || runtimeDef?.buildCommand) {
+      compileCommand = (language.defaultBuildCommand || runtimeDef?.buildCommand || '').replace(/\{file\}/g, filename);
+    }
+  } else {
+    // Interpreted / script runtimes
+    canBuild = false;
+    canRun = hasInterpreter || hasRuntime;
+    if (!canRun) {
+      const interpName = interpreterTool?.executableName || runtimeTool?.executableName || 'interpreter';
+      statusReason = `${language.displayName} interpreter (${interpName}) is unavailable in current execution environment.`;
+    }
+    runCommand = runCommand.replace(/\{file\}/g, filename);
   }
 
   let testCommand: string | undefined;
@@ -132,18 +171,19 @@ export async function resolveFileCapabilities(
     debugCommand = (language.defaultDebugCommand || runtimeDef?.debugCommand || '').replace(/\{file\}/g, filename);
   }
 
-  // Capabilities are strictly derived from language design + real discovery / cloud sandbox state
-  const canRun = language.runCapability && isVerified;
-  const canBuild = language.buildCapability && isAvailable;
-  const canDebug = language.debugCapability && isVerified && Boolean(debugCommand);
-  const canTest = language.testCapability && isVerified && Boolean(testCommand);
-
-  let statusReason: string | undefined;
-  if (!isAvailable) {
-    statusReason = `Runtime '${discovery.name || runtimeDef?.name || language.displayName}' is not installed in the execution environment.`;
-  } else if (!isVerified) {
-    statusReason = `Runtime '${discovery.name || runtimeDef?.name || language.displayName}' is available but pending execution verification.`;
+  // Verification status strictly reflects real host discovery state
+  let verificationStatus: FileCapabilityState['verificationStatus'] = 'UNAVAILABLE';
+  if (discovery.state === 'VERIFIED') {
+    verificationStatus = 'VERIFIED';
+  } else if (discovery.state === 'AVAILABLE') {
+    verificationStatus = (canRun || canBuild) ? 'AVAILABLE' : 'UNAVAILABLE';
+  } else if (discovery.state === 'BROKEN') {
+    verificationStatus = 'BROKEN';
+  } else {
+    verificationStatus = 'UNAVAILABLE';
   }
+
+  const isAvailable = canRun || canBuild || discovery.state === 'AVAILABLE' || discovery.state === 'VERIFIED';
 
   return {
     filename,
@@ -154,16 +194,19 @@ export async function resolveFileCapabilities(
     category: language.category,
     runtimeId,
     runtimeName: discovery.name || runtimeDef?.name || language.displayName,
-    runtimeVersion: discovery.version || runtimeDef?.version || (isServerless ? 'Remote Sandbox' : undefined),
-    runtimeExecutable: discovery.executablePath || (isServerless ? runtimeDef?.runtime : undefined),
+    runtimeVersion: runtimeTool?.version || discovery.version,
+    runtimeExecutable: runtimeTool?.executablePath || discovery.executablePath,
+    compilerExecutable: compilerTool?.executablePath,
+    compilerVersion: compilerTool?.version,
+    compilerAvailable: hasCompiler,
     runtimeAvailable: isAvailable,
-    verificationStatus: isVerified ? 'VERIFIED' : discovery.state,
+    verificationStatus,
     statusReason,
     capabilities: {
       run: canRun,
       build: canBuild,
-      debug: canDebug,
-      test: canTest,
+      debug: Boolean(canRun && debugCommand),
+      test: Boolean(canRun && testCommand),
       stdin: language.stdinCapability,
       stdout: language.stdoutCapability,
       stderr: language.stderrCapability,

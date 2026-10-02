@@ -49,6 +49,12 @@ export function materializeExecutionSandbox(
     fs.writeFileSync(targetPath, file.content || '', 'utf-8');
   }
 
+  // Ensure build directory exists for compiled languages (C++, C, Java, etc.)
+  const buildDir = path.join(runnerRoot, 'build');
+  if (!fs.existsSync(buildDir)) {
+    fs.mkdirSync(buildDir, { recursive: true });
+  }
+
   return runnerRoot;
 }
 

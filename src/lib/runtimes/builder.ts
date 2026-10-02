@@ -92,7 +92,7 @@ export function createWorkspacePipeline(
         isRequired: false,
         timeoutMs: 45000,
       });
-    } else {
+    } else if (mode === 'run') {
       steps.push({
         id: `exec-${fileStrategy.runtimeId}`,
         name: `Execute ${fileStrategy.runtime.name}`,

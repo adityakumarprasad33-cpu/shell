@@ -46,3 +46,6 @@ id_rsa*
 .DS_Store
 Thumbs.db
 
+# Runix Core native build directories
+runix-core/build/
+

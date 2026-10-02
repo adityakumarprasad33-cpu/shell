@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveFileCapabilities } from '@/lib/runtimes/capability-resolver';
+import { NativeCoreAdapter } from '@/lib/runtimes/native-core-adapter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,6 +16,11 @@ export async function GET(request: NextRequest) {
         { error: 'Query parameter "file" is required.' },
         { status: 400 }
       );
+    }
+
+    const nativeCaps = NativeCoreAdapter.getCapabilities(file);
+    if (nativeCaps) {
+      return NextResponse.json(nativeCaps);
     }
 
     const state = await resolveFileCapabilities(file);
@@ -37,6 +43,11 @@ export async function POST(request: NextRequest) {
         { error: 'Property "file" is required in request body.' },
         { status: 400 }
       );
+    }
+
+    const nativeCaps = NativeCoreAdapter.getCapabilities(file);
+    if (nativeCaps) {
+      return NextResponse.json(nativeCaps);
     }
 
     const state = await resolveFileCapabilities(file);
