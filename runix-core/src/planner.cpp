@@ -193,7 +193,13 @@ BuildPlan RunixPlanner::create_build_plan(
         plan.outputFiles.push_back(outBin);
 
         plan.arguments.push_back("-O2");
-        if (isCpp) plan.arguments.push_back("-std=c++20");
+        if (isCpp) {
+            if (dr.compilerVersion.find("6.") != std::string::npos || dr.compilerVersion.find("5.") != std::string::npos) {
+                plan.arguments.push_back("-std=c++14");
+            } else {
+                plan.arguments.push_back("-std=c++20");
+            }
+        }
         plan.arguments.push_back("-Wall");
         plan.arguments.push_back("\"" + normTarget + "\"");
         plan.arguments.push_back("-o");

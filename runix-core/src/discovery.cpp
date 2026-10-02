@@ -179,9 +179,9 @@ std::string RunixToolchainDiscovery::get_effective_system_path() {
 
     std::ostringstream oss;
     std::vector<std::string> parts = split(currentPath, delim);
-    for (const auto& ep : extraPaths) {
-        if (fs::exists(ep)) {
-            parts.insert(parts.begin(), ep);
+    for (auto it = extraPaths.rbegin(); it != extraPaths.rend(); ++it) {
+        if (fs::exists(*it)) {
+            parts.insert(parts.begin(), *it);
         }
     }
 

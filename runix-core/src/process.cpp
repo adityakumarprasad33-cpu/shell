@@ -84,7 +84,7 @@ ProcessResult RunixProcessEngine::execute(
         }
     }
 
-    std::string finalCmd = "cmd.exe /c " + cmd;
+    std::string finalCmd = "cmd.exe /d /s /c \"" + cmd + "\"";
 
     std::vector<char> cmdBuf(finalCmd.begin(), finalCmd.end());
     cmdBuf.push_back('\0');

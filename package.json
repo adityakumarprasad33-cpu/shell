@@ -4,8 +4,9 @@
   "private": true,
   "description": "Production-grade developer terminal platform in the Runix ecosystem",
   "scripts": {
+    "build:core": "node scripts/build-native-core.js",
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/build-native-core.js && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "npx tsx scripts/test-runner.ts"

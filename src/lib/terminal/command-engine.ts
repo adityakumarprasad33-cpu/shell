@@ -904,7 +904,37 @@ export async function processTerminalCommand(
         ? path.posix.relative(session.relativeCwd, resolved.executionRelativePath) || path.posix.basename(resolved.executionRelativePath)
         : resolved.executionRelativePath;
 
-      // Resolve execution strategy using universal resolver
+      // In production or when native core is available: Execute via C++20 Native Core
+      if (NativeCoreAdapter.isAvailable()) {
+        const res = await NativeCoreAdapter.execute(
+          {
+            operation: 'run',
+            executionId: execId,
+            workspaceId,
+            filename: runnerRelFile,
+            targetFile: runnerRelFile,
+            files: filesToMaterialize,
+            workspaceDir: effectiveExecDir,
+          },
+          (ev) => {
+            if (ev.type === 'stdout' && ev.data) print(ev.data);
+            if (ev.type === 'stderr' && ev.data) printErr(ev.data);
+            if (ev.type === 'error' && ev.message) printErr(`\r\n\x1b[31m[runix:error] ${ev.message}\x1b[0m\r\n`);
+            if (ev.type === 'status' && ev.message) print(`\x1b[90m[runix:${ev.status}] ${ev.message}\x1b[0m\r\n`);
+          }
+        );
+        cleanupExecutionSandbox(runnerRoot);
+        return exit(res.exitCode);
+      }
+
+      // In production: NEVER silently fall back to TypeScript engine
+      if (process.env.NODE_ENV === 'production') {
+        cleanupExecutionSandbox(runnerRoot);
+        printErr(`\r\n\x1b[1;31m[runix:fatal] Native C++20 Core binary is required in production environment.\x1b[0m\r\n`);
+        return exit(1);
+      }
+
+      // Development / test fallback: Resolve execution strategy using universal resolver
       const strategy = resolveFileExecution(runnerRelFile, effectiveExecDir);
       if (!strategy) {
         cleanupExecutionSandbox(runnerRoot);
@@ -977,6 +1007,36 @@ export async function processTerminalCommand(
       const effectiveExecDir = session.relativeCwd
         ? path.join(runnerRoot, ...session.relativeCwd.split('/'))
         : runnerRoot;
+
+      // In production or when native core is available: Execute via C++20 Native Core
+      if (NativeCoreAdapter.isAvailable() && target) {
+        const res = await NativeCoreAdapter.execute(
+          {
+            operation: 'build',
+            executionId: execId,
+            workspaceId,
+            filename: target,
+            targetFile: target,
+            files: filesToMaterialize,
+            workspaceDir: effectiveExecDir,
+          },
+          (ev) => {
+            if (ev.type === 'stdout' && ev.data) print(ev.data);
+            if (ev.type === 'stderr' && ev.data) printErr(ev.data);
+            if (ev.type === 'error' && ev.message) printErr(`\r\n\x1b[31m[runix:build:error] ${ev.message}\x1b[0m\r\n`);
+            if (ev.type === 'status' && ev.message) print(`\x1b[90m[runix:${ev.status}] ${ev.message}\x1b[0m\r\n`);
+          }
+        );
+        cleanupExecutionSandbox(runnerRoot);
+        return exit(res.exitCode);
+      }
+
+      // In production: NEVER silently fall back to TypeScript engine
+      if (process.env.NODE_ENV === 'production') {
+        cleanupExecutionSandbox(runnerRoot);
+        printErr(`\r\n\x1b[1;31m[runix:fatal] Native C++20 Core binary is required in production environment.\x1b[0m\r\n`);
+        return exit(1);
+      }
 
       const pipeline = createWorkspacePipeline(runnerRoot, filenames, target, 'build');
 
