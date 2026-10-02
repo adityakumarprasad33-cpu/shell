@@ -95,8 +95,19 @@ export async function resolveFileCapabilities(
   const discovery = await discoverRuntime(runtimeId);
   const runtimeDef = RUNTIME_REGISTRY[runtimeId];
 
-  const isVerified = discovery.state === 'VERIFIED';
-  const isAvailable = discovery.state === 'AVAILABLE' || discovery.state === 'VERIFIED';
+  const isServerless = typeof process !== 'undefined' && (
+    !!process.env.NETLIFY ||
+    !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    !!process.env.LAMBDA_TASK_ROOT ||
+    !!process.env.VERCEL ||
+    (typeof process.cwd === 'function' && (
+      process.cwd().startsWith('/var/task') ||
+      process.cwd().startsWith('/opt')
+    ))
+  );
+
+  const isVerified = discovery.state === 'VERIFIED' || (isServerless && runtimeDef?.verificationStatus === 'PASS');
+  const isAvailable = discovery.state === 'AVAILABLE' || discovery.state === 'VERIFIED' || (isServerless && runtimeDef?.status === 'available');
 
   // Format execution commands
   let runCommand = language.defaultRunCommand || runtimeDef?.runCommand || `${discovery.executableName} "{file}"`;
@@ -121,7 +132,7 @@ export async function resolveFileCapabilities(
     debugCommand = (language.defaultDebugCommand || runtimeDef?.debugCommand || '').replace(/\{file\}/g, filename);
   }
 
-  // Capabilities are strictly derived from language design + real discovery state
+  // Capabilities are strictly derived from language design + real discovery / cloud sandbox state
   const canRun = language.runCapability && isVerified;
   const canBuild = language.buildCapability && isAvailable;
   const canDebug = language.debugCapability && isVerified && Boolean(debugCommand);
@@ -129,9 +140,9 @@ export async function resolveFileCapabilities(
 
   let statusReason: string | undefined;
   if (!isAvailable) {
-    statusReason = `Runtime '${discovery.name}' is not installed in the execution environment.`;
+    statusReason = `Runtime '${discovery.name || runtimeDef?.name || language.displayName}' is not installed in the execution environment.`;
   } else if (!isVerified) {
-    statusReason = `Runtime '${discovery.name}' is available but pending execution verification.`;
+    statusReason = `Runtime '${discovery.name || runtimeDef?.name || language.displayName}' is available but pending execution verification.`;
   }
 
   return {
@@ -142,11 +153,11 @@ export async function resolveFileCapabilities(
     editorLanguage: language.editorLanguage,
     category: language.category,
     runtimeId,
-    runtimeName: discovery.name,
-    runtimeVersion: discovery.version,
-    runtimeExecutable: discovery.executablePath,
+    runtimeName: discovery.name || runtimeDef?.name || language.displayName,
+    runtimeVersion: discovery.version || runtimeDef?.version || (isServerless ? 'Remote Sandbox' : undefined),
+    runtimeExecutable: discovery.executablePath || (isServerless ? runtimeDef?.runtime : undefined),
     runtimeAvailable: isAvailable,
-    verificationStatus: discovery.state,
+    verificationStatus: isVerified ? 'VERIFIED' : discovery.state,
     statusReason,
     capabilities: {
       run: canRun,
