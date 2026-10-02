@@ -1,0 +1,19 @@
+{
+  "name": "runix-terminal-cli",
+  "version": "1.0.0",
+  "description": "Official Command Line Interface for Runix Terminal Platform",
+  "main": "bin/runix.js",
+  "bin": {
+    "runix": "./bin/runix.js"
+  },
+  "keywords": [
+    "runix",
+    "terminal",
+    "developer",
+    "cli",
+    "sandbox",
+    "compiler"
+  ],
+  "author": "Runix Web Technologies",
+  "license": "Apache-2.0"
+}

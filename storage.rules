@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(accountId) {
+      return isAuthenticated() && request.auth.uid == accountId;
+    }
+
+    // Isolated terminal account workspace files and uploads
+    match /terminalAccounts/{accountId}/workspaces/{workspaceId}/{allPaths=**} {
+      allow read: if isOwner(accountId);
+      allow write: if isOwner(accountId)
+        && request.resource.size < 50 * 1024 * 1024 // 50MB max file upload
+        && !request.resource.name.matches('.*(\\.\\./|/\\.\\.).*'); // prevent path traversal
+    }
+
+    // Public Releases and Downloads
+    match /releases/{platform}/{filename} {
+      allow read: if true;
+      allow write: if false; // Admin SDK only
+    }
+  }
+}

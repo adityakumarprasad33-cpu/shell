@@ -1,0 +1,80 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to verify user authentication
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    // Helper function to verify terminal account ownership
+    function isAccountOwner(accountId) {
+      return isAuthenticated() && (
+        request.auth.uid == accountId ||
+        request.auth.uid == resource.data.firebaseUserId ||
+        request.auth.uid == request.resource.data.firebaseUserId
+      );
+    }
+
+    // Explicit Terminal Account Namespace
+    match /terminalAccounts/{accountId} {
+      allow read: if isAuthenticated() && (request.auth.uid == accountId || resource.data.firebaseUserId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.firebaseUserId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (resource.data.firebaseUserId == request.auth.uid || request.auth.uid == accountId);
+
+      // Sessions subcollection
+      match /sessions/{sessionId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+
+      // History subcollection
+      match /history/{historyId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+
+      // Workspaces subcollection
+      match /workspaces/{workspaceId} {
+        allow read, write: if isAccountOwner(accountId);
+
+        // Projects & Files inside workspaces with chunked storage
+        match /files/{fileId} {
+          allow read, write: if isAccountOwner(accountId);
+
+          match /chunks/{chunkId} {
+            allow read, write: if isAccountOwner(accountId);
+          }
+        }
+
+        // Folders inside workspaces
+        match /folders/{folderId} {
+          allow read, write: if isAccountOwner(accountId);
+        }
+      }
+
+      // Settings subcollection
+      match /settings/{settingId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+
+      // Devices & Activity
+      match /devices/{deviceId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+
+      match /activity/{activityId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+    }
+
+    // Releases - Publicly readable for download page & CLI, writable only by admins
+    match /releases/{releaseId} {
+      allow read: if true;
+      allow write: if false; // Admin SDK only
+    }
+
+    // Device Auth Codes - Temporary handshake tokens
+    match /deviceCodes/{code} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

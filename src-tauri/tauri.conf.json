@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "RunixTerminal",
+  "version": "0.1.0",
+  "identifier": "in.runix.terminal",
+  "build": {
+    "frontendDist": "../desktop-dist",
+    "devUrl": "http://localhost:3005"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Runix Terminal",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 800,
+        "minHeight": 500,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "runix-terminal-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-grade developer terminal platform in the Runix ecosystem",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "npx tsx scripts/test-runner.ts"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4",
+    "clsx": "^2.1.1",
+    "firebase": "^12.15.0",
+    "firebase-admin": "^14.2.0",
+    "jszip": "^3.10.2",
+    "lucide-react": "^1.23.0",
+    "next": "16.2.10",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0",
+    "xterm-addon-search": "^0.13.0",
+    "xterm-addon-web-links": "^0.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}

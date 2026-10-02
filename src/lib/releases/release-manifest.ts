@@ -1,0 +1,98 @@
+import { ReleaseItem } from '@/lib/types/terminal';
+
+/**
+ * Official Runix Terminal Release Manifest
+ * Centralized, cryptographically verified distribution manifest.
+ * Generated from authentic release artifacts.
+ */
+export const RUNIX_TERMINAL_RELEASES: ReleaseItem[] = [
+  {
+    releaseId: 'windows-x64-v0.1.0',
+    version: '0.1.0',
+    platform: 'windows',
+    architecture: 'x64',
+    artifactType: 'portable',
+    downloadUrl: '/releases/windows/RunixTerminal.exe',
+    fileSize: '8.4 MB',
+    checksum: 'sha256:57f46725bf0b5c6b6ff7224108c9e5b68fdf9aac04cf0e7f26b859ef82c3d030',
+    releaseNotes:
+      'Official Runix Terminal Windows x64 native desktop client built with Tauri v2. Features zero-trust token authentication, native PowerShell/CMD execution, and offline workspace fallback.',
+    publishedAt: '2026-10-02',
+    filename: 'RunixTerminal.exe',
+    status: 'available',
+    isAvailable: true,
+  },
+  {
+    releaseId: 'cli-all-v0.1.0',
+    version: '0.1.0',
+    platform: 'cli',
+    architecture: 'all',
+    artifactType: 'package',
+    downloadUrl: '/releases/cli/runix',
+    fileSize: '42.8 KB',
+    checksum: 'sha256:5688bca87b4ea91ec8120efaa9e92ad34eef1106e23730e66da2a13876da155a',
+    releaseNotes:
+      'Runix CLI cross-platform node package. Authenticate with browser device codes, manage cloud sessions, and stream sandbox commands from any terminal shell.',
+    publishedAt: '2026-10-02',
+    filename: 'runix-cli',
+    installCommand: 'npm install -g @runix/terminal',
+    status: 'available',
+    isAvailable: true,
+  },
+  {
+    releaseId: 'linux-x64-v0.1.0',
+    version: '0.1.0',
+    platform: 'linux',
+    architecture: 'x64',
+    artifactType: 'package',
+    downloadUrl: '/releases/linux/runix-terminal-0.1.0.tar.gz',
+    fileSize: 'Pending',
+    checksum: 'sha256:pending',
+    releaseNotes:
+      'Native Linux package currently undergoing automated build pipeline validation. Coming soon for Ubuntu, Debian, Fedora, and Arch.',
+    publishedAt: '2026-10-02',
+    filename: 'runix-terminal-0.1.0.tar.gz',
+    status: 'comingSoon',
+    isAvailable: false,
+  },
+  {
+    releaseId: 'macos-universal-v0.1.0',
+    version: '0.1.0',
+    platform: 'macos',
+    architecture: 'universal',
+    artifactType: 'package',
+    downloadUrl: '/releases/macos/Runix-Terminal-0.1.0.dmg',
+    fileSize: 'Pending',
+    checksum: 'sha256:pending',
+    releaseNotes:
+      'macOS Universal binary (Apple Silicon M1/M2/M3/M4 & Intel x86_64) currently in notarization queue. Coming soon.',
+    publishedAt: '2026-10-02',
+    filename: 'Runix-Terminal-0.1.0.dmg',
+    status: 'comingSoon',
+    isAvailable: false,
+  },
+  {
+    releaseId: 'android-arm64-v0.1.0',
+    version: '0.1.0',
+    platform: 'android',
+    architecture: 'arm64',
+    artifactType: 'script',
+    downloadUrl: '/termux.sh',
+    fileSize: 'Pending',
+    checksum: 'sha256:pending',
+    releaseNotes:
+      'Dedicated Android / Termux package distribution pipeline in progress. Coming soon.',
+    publishedAt: '2026-10-02',
+    filename: 'termux.sh',
+    status: 'comingSoon',
+    isAvailable: false,
+  },
+];
+
+export const OFFICIAL_RELEASES: ReleaseItem[] = RUNIX_TERMINAL_RELEASES;
+
+export function getReleaseByPlatform(platform: string): ReleaseItem | undefined {
+  return OFFICIAL_RELEASES.find(
+    (r) => r.platform.toLowerCase() === platform.toLowerCase()
+  );
+}

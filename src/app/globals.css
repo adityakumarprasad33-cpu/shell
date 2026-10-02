@@ -1,0 +1,115 @@
+@import "tailwindcss";
+@import "xterm/css/xterm.css";
+
+@theme inline {
+  --color-runix-black: #09090B;
+  --color-runix-panel: #0F0F11;
+  --color-runix-card: #141416;
+  --color-runix-elevated: #1A1A1E;
+  --color-runix-border: rgba(255, 255, 255, 0.06);
+  --color-runix-border-hover: rgba(255, 255, 255, 0.10);
+  --color-runix-blue: #315EF7;
+  --color-runix-blue-hover: #244CD0;
+  --color-runix-cyan: #00E5FF;
+  --color-runix-green: #22C55E;
+  --color-runix-amber: #F59E0B;
+  --color-runix-red: #EF4444;
+  --color-runix-text: #FAFAFA;
+  --color-runix-muted: #A1A1AA;
+  --color-runix-subtle: #71717A;
+}
+
+:root {
+  --background: #09090B;
+  --foreground: #FAFAFA;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body {
+  background-color: #09090B;
+  color: #FAFAFA;
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #09090B;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.10);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* XTerm customizations */
+.xterm {
+  padding: 10px 14px;
+}
+.xterm-viewport {
+  background-color: #09090B !important;
+}
+.xterm-screen {
+  font-feature-settings: "liga" 0;
+}
+
+/* Glassmorphism panel (shell/editor pages) */
+.runix-glass {
+  background: rgba(14, 17, 23, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.runix-glass-subtle {
+  background: rgba(19, 23, 34, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Subtle grid for auth/shell pages */
+.runix-grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Dot pattern for landing page (almost invisible) */
+.dot-pattern {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Shimmer pulse */
+@keyframes runix-pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.pulse-glow {
+  animation: runix-pulse-glow 2.5s ease-in-out infinite;
+}
+
+/* Section entrance — used with IntersectionObserver */
+.section-hidden {
+  opacity: 0;
+  transform: translateY(16px);
+}
+.section-visible {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
