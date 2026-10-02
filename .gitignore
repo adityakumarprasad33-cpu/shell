@@ -24,8 +24,9 @@ yarn-error.log*
 
 # Environment local files & Secret Keys
 .env
-.env.*
-!.env.example
+.env*
+*.env
+*.env.*
 
 # Credentials, Private Keys, Service Accounts
 *.pem

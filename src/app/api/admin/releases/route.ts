@@ -11,10 +11,11 @@ import {
 import { ReleaseItem } from '@/lib/types/terminal';
 import { verifyPEBinary, formatBytes } from '@/lib/releases/pe-verifier';
 
-// Configurable Super Admin Master Secret Key
-const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_KEY || 'runix-superadmin-master-2026';
+// Configurable Super Admin Master Secret Key (Defined via server environment variable)
+const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_KEY;
 
 function isAuthorized(request: NextRequest): boolean {
+  if (!SUPER_ADMIN_SECRET) return false;
   const authHeader = request.headers.get('authorization') || '';
   const adminKey = request.headers.get('x-super-admin-key') || '';
 

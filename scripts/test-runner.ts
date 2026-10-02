@@ -1315,8 +1315,8 @@ async function runTests() {
     const gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
 
     assert(gitignoreContent.includes('.env'), 'SEC-001: .gitignore contains .env');
-    assert(gitignoreContent.includes('.env.*'), 'SEC-002: .gitignore contains .env.*');
-    assert(gitignoreContent.includes('!.env.example'), 'SEC-003: .gitignore safely preserves !.env.example');
+    assert(gitignoreContent.includes('.env*'), 'SEC-002: .gitignore contains .env* wildcard');
+    assert(!fs.existsSync(path.join(process.cwd(), '.env.example')), 'SEC-003: .env.example is completely revoked and does not exist in workspace');
     assert(gitignoreContent.includes('*.pem') && gitignoreContent.includes('*.key'), 'SEC-004: .gitignore excludes private keys (*.pem, *.key)');
     assert(gitignoreContent.includes('service-account*.json'), 'SEC-005: .gitignore excludes service-account*.json');
   }

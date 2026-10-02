@@ -38,76 +38,94 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Sync or initialize Terminal Account in Firestore
   const syncTerminalAccount = async (firebaseUser: User): Promise<TerminalAccount> => {
-    const db = getFirebaseDb();
-    const accountRef = doc(db, 'terminalAccounts', firebaseUser.uid);
-    const snap = await getDoc(accountRef);
+    // Generate optimistic fallback account immediately to avoid blocking UI
+    const fallbackAccount: TerminalAccount = {
+      accountId: firebaseUser.uid,
+      firebaseUserId: firebaseUser.uid,
+      email: firebaseUser.email || '',
+      displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Runix Developer',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+      preferences: DEFAULT_TERMINAL_SETTINGS,
+    };
 
-    if (snap.exists()) {
-      const data = snap.data();
-      const account: TerminalAccount = {
-        accountId: firebaseUser.uid,
-        firebaseUserId: firebaseUser.uid,
-        email: data.email || firebaseUser.email || '',
-        displayName: data.displayName || firebaseUser.displayName || 'Runix Developer',
-        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
-        updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : new Date().toISOString(),
-        status: data.status || 'active',
-        preferences: {
-          ...DEFAULT_TERMINAL_SETTINGS,
-          ...(data.preferences || {}),
-        },
-      };
-      setTerminalAccount(account);
-      return account;
-    } else {
-      // First-time Terminal Account setup
-      const initialAccount: TerminalAccount = {
-        accountId: firebaseUser.uid,
-        firebaseUserId: firebaseUser.uid,
-        email: firebaseUser.email || '',
-        displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Runix Developer',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        status: 'active',
-        preferences: DEFAULT_TERMINAL_SETTINGS,
-      };
+    try {
+      const db = getFirebaseDb();
+      const accountRef = doc(db, 'terminalAccounts', firebaseUser.uid);
+      
+      // Strict 2-second timeout to prevent infinite hanging when Firestore is slow, offline, or restricted
+      const getDocPromise = getDoc(accountRef);
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000));
+      const snap = await Promise.race([getDocPromise, timeoutPromise]);
 
-      await setDoc(accountRef, {
-        ...initialAccount,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      if (snap && snap.exists()) {
+        const data = snap.data();
+        const account: TerminalAccount = {
+          accountId: firebaseUser.uid,
+          firebaseUserId: firebaseUser.uid,
+          email: data.email || firebaseUser.email || '',
+          displayName: data.displayName || firebaseUser.displayName || 'Runix Developer',
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
+          updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : new Date().toISOString(),
+          status: data.status || 'active',
+          preferences: {
+            ...DEFAULT_TERMINAL_SETTINGS,
+            ...(data.preferences || {}),
+          },
+        };
+        setTerminalAccount(account);
+        return account;
+      } else if (snap && !snap.exists()) {
+        // First-time Terminal Account setup — write asynchronously in background
+        setDoc(accountRef, {
+          ...fallbackAccount,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }).catch((e) => console.warn('Terminal account setDoc error:', e));
 
-      // Initialize default workspace
-      const defaultWorkspaceRef = doc(db, 'terminalAccounts', firebaseUser.uid, 'workspaces', 'default');
-      await setDoc(defaultWorkspaceRef, {
-        workspaceId: 'default',
-        accountId: firebaseUser.uid,
-        name: 'main-workspace',
-        description: 'Primary Runix developer workspace',
-        rootPath: '/home/runix/workspace',
-        fileCount: 1,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+        const defaultWorkspaceRef = doc(db, 'terminalAccounts', firebaseUser.uid, 'workspaces', 'default');
+        setDoc(defaultWorkspaceRef, {
+          workspaceId: 'default',
+          accountId: firebaseUser.uid,
+          name: 'main-workspace',
+          description: 'Primary Runix developer workspace',
+          rootPath: '/home/runix/workspace',
+          fileCount: 1,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }).catch((e) => console.warn('Workspace setDoc error:', e));
 
-      // Clean account bootstrap: seed exactly ONE intentional file: runix-command.txt
-      const commandRef = doc(db, 'terminalAccounts', firebaseUser.uid, 'workspaces', 'default', 'files', 'runix-command.txt');
-      await setDoc(commandRef, {
-        path: 'runix-command.txt',
-        name: 'runix-command.txt',
-        type: 'file',
-        size: OFFICIAL_RUNIX_COMMAND_REFERENCE.length,
-        content: OFFICIAL_RUNIX_COMMAND_REFERENCE,
-        updatedAt: serverTimestamp(),
-      });
+        const commandRef = doc(db, 'terminalAccounts', firebaseUser.uid, 'workspaces', 'default', 'files', 'runix-command.txt');
+        setDoc(commandRef, {
+          path: 'runix-command.txt',
+          name: 'runix-command.txt',
+          type: 'file',
+          size: OFFICIAL_RUNIX_COMMAND_REFERENCE.length,
+          content: OFFICIAL_RUNIX_COMMAND_REFERENCE,
+          updatedAt: serverTimestamp(),
+        }).catch((e) => console.warn('Command file setDoc error:', e));
 
-      setTerminalAccount(initialAccount);
-      return initialAccount;
+        setTerminalAccount(fallbackAccount);
+        return fallbackAccount;
+      } else {
+        // Timed out fetching Firestore account doc — fallback optimistically
+        setTerminalAccount(fallbackAccount);
+        return fallbackAccount;
+      }
+    } catch (err) {
+      console.warn('Firestore terminal account fetch error, using fallback:', err);
+      setTerminalAccount(fallbackAccount);
+      return fallbackAccount;
     }
   };
 
   useEffect(() => {
+    // Safety timer: Never allow loading state to remain true for longer than 2.5s
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 2500);
+
     const auth = getFirebaseAuth();
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       try {
@@ -121,11 +139,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         console.error('Terminal Account synchronization error:', err);
       } finally {
+        clearTimeout(safetyTimer);
         setLoading(false);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(safetyTimer);
+      unsubscribe();
+    };
   }, []);
 
   const signInWithEmail = async (email: string, pass: string) => {
