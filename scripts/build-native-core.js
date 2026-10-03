@@ -55,6 +55,9 @@ function buildNativeCore() {
       console.log(`[runix:core] Attempting compilation with ${comp}...`);
       const cmd = `${comp} -std=c++20 -O2 -I ${includeDir} ${srcFiles} -o "${targetBin}"`;
       execSync(cmd, { stdio: 'inherit' });
+      if (!isWindows) {
+        try { fs.chmodSync(targetBin, 0o755); } catch {}
+      }
       console.log(`[runix:core] Compilation succeeded with ${comp}: ${targetBin}`);
       return true;
     } catch {}

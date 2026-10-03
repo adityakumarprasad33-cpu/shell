@@ -927,10 +927,10 @@ export async function processTerminalCommand(
         return exit(res.exitCode);
       }
 
-      // In production: NEVER silently fall back to TypeScript engine
-      if (process.env.NODE_ENV === 'production') {
+      // If native core is unavailable in web / serverless container, gracefully fall back unless strict native requested
+      if (process.env.RUNIX_STRICT_NATIVE === 'true') {
         cleanupExecutionSandbox(runnerRoot);
-        printErr(`\r\n\x1b[1;31m[runix:fatal] Native C++20 Core binary is required in production environment.\x1b[0m\r\n`);
+        printErr(`\r\n\x1b[1;31m[runix:fatal] Native C++20 Core binary is required under RUNIX_STRICT_NATIVE.\x1b[0m\r\n`);
         return exit(1);
       }
 
@@ -1031,10 +1031,10 @@ export async function processTerminalCommand(
         return exit(res.exitCode);
       }
 
-      // In production: NEVER silently fall back to TypeScript engine
-      if (process.env.NODE_ENV === 'production') {
+      // If native core is unavailable in web / serverless container, gracefully fall back unless strict native requested
+      if (process.env.RUNIX_STRICT_NATIVE === 'true') {
         cleanupExecutionSandbox(runnerRoot);
-        printErr(`\r\n\x1b[1;31m[runix:fatal] Native C++20 Core binary is required in production environment.\x1b[0m\r\n`);
+        printErr(`\r\n\x1b[1;31m[runix:fatal] Native C++20 Core binary is required under RUNIX_STRICT_NATIVE.\x1b[0m\r\n`);
         return exit(1);
       }
 

@@ -64,8 +64,7 @@ import { RunixFileResolver } from '../src/lib/workspace/file-resolver';
 import { materializeExecutionSandbox, cleanupExecutionSandbox } from '../src/lib/terminal/sandbox-runner';
 import { RunixFileIconRegistry, RunixFolderIconRegistry } from '../src/lib/workspace/icon-registry';
 import { safeParseResponse } from '../src/lib/safe-json';
-import fs from 'fs';
-import path from 'path';
+import { NativeCoreAdapter } from '../src/lib/runtimes/native-core-adapter';
 
 let passed = 0;
 let failed = 0;
@@ -1339,6 +1338,80 @@ async function runTests() {
     assert(!fs.existsSync(path.join(process.cwd(), '.env.example')), 'SEC-003: .env.example is completely revoked and does not exist in workspace');
     assert(gitignoreContent.includes('*.pem') && gitignoreContent.includes('*.key'), 'SEC-004: .gitignore excludes private keys (*.pem, *.key)');
     assert(gitignoreContent.includes('service-account*.json'), 'SEC-005: .gitignore excludes service-account*.json');
+  }
+
+  // 37. Universal Runtime Remediation & Real Re-Verification (AWK, SQL, TS, React, Vue)
+  console.log('\n\x1b[1m[37] Universal Runtime Remediation & Real Re-Verification\x1b[0m');
+  {
+    // A. NativeCoreAdapter binary availability
+    assert(NativeCoreAdapter.isAvailable(), 'CORE-001: Native C++20 Runix Core binary is active and compiled');
+
+    // B. Native File Intelligence & Language Detection
+    const awkDetect = NativeCoreAdapter.detect('script.awk');
+    assert(awkDetect?.languageId === 'awk', 'LANG-001: AWK (.awk) detected by C++20 core');
+    assert(awkDetect?.capabilities.run === true, 'LANG-002: AWK run capability is verified active');
+
+    const sqlDetect = NativeCoreAdapter.detect('schema.sql');
+    assert(sqlDetect?.languageId === 'sql', 'LANG-003: SQL (.sql) detected by C++20 core');
+    assert(sqlDetect?.capabilities.run === true, 'LANG-004: SQL run capability is verified active');
+
+    const reactDetect = NativeCoreAdapter.detect('App.jsx');
+    assert(reactDetect?.languageId === 'react', 'LANG-005: React JSX (.jsx) detected by C++20 core');
+    assert(reactDetect?.capabilities.run === true, 'LANG-006: React run capability is verified active');
+
+    const vueDetect = NativeCoreAdapter.detect('App.vue');
+    assert(vueDetect?.languageId === 'vue', 'LANG-007: Vue (.vue) detected by C++20 core');
+    assert(vueDetect?.capabilities.run === true, 'LANG-008: Vue run capability is verified active');
+
+    // C. Real AWK Execution via Native C++20 Core
+    let awkOutput = '';
+    let awkExit = -1;
+    await NativeCoreAdapter.execute(
+      {
+        operation: 'run',
+        executionId: 'test_awk_verif_' + Date.now(),
+        workspaceId: 'verif_ws',
+        filename: 'main.awk',
+        files: [{ path: 'main.awk', content: 'BEGIN { print "AWK_NATIVE_EXECUTION_VERIFIED"; }\n' }],
+      },
+      (ev) => {
+        if (ev.type === 'stdout' && ev.data) awkOutput += ev.data;
+        if (ev.type === 'exit' && typeof ev.exitCode === 'number') awkExit = ev.exitCode;
+      }
+    );
+    assert(awkExit === 0, 'RUN-001: AWK real execution returned exit code 0');
+    assert(awkOutput.includes('AWK_NATIVE_EXECUTION_VERIFIED'), 'RUN-002: AWK produced real verified program output');
+
+    // D. Real SQL Execution against SQLite via Native C++20 Core
+    let sqlOutput = '';
+    let sqlExit = -1;
+    await NativeCoreAdapter.execute(
+      {
+        operation: 'run',
+        executionId: 'test_sql_verif_' + Date.now(),
+        workspaceId: 'verif_ws',
+        filename: 'query.sql',
+        files: [{
+          path: 'query.sql',
+          content: 'CREATE TABLE metrics (id INT, score INT); INSERT INTO metrics VALUES (1, 100); SELECT score FROM metrics;\n',
+        }],
+      },
+      (ev) => {
+        if (ev.type === 'stdout' && ev.data) sqlOutput += ev.data;
+        if (ev.type === 'exit' && typeof ev.exitCode === 'number') sqlExit = ev.exitCode;
+      }
+    );
+    assert(sqlExit === 0, 'RUN-003: SQL real query execution returned exit code 0');
+    assert(sqlOutput.includes('100'), 'RUN-004: SQL query returned real executed database rows');
+
+    // E. TypeScript and React Execution Strategy Verification
+    const tsStrategy = resolveFileExecution('main.ts', process.cwd());
+    assert(tsStrategy !== null && tsStrategy.isVerified, 'RES-001: TypeScript execution strategy is verified');
+    assert(tsStrategy?.runCommand.includes('tsx'), 'RES-002: TypeScript runs via real tsx engine');
+
+    const awkStrategy = resolveFileExecution('script.awk', process.cwd());
+    assert(awkStrategy !== null && awkStrategy.isVerified, 'RES-003: AWK execution strategy is verified');
+    assert(awkStrategy?.runCommand.includes('-f'), 'RES-004: AWK execution command properly passes -f flag');
   }
 
   // Summary

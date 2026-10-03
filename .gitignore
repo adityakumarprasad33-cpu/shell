@@ -42,9 +42,10 @@ id_rsa*
 *.cer
 *.crt
 
-# OS metadata
+# OS and editor metadata
 .DS_Store
 Thumbs.db
+.vscode/
 
 # Runix Core native build directories
 runix-core/build/

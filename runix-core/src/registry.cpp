@@ -338,6 +338,95 @@ void RunixRegistry::init() {
         l.category = "code";
         add_lang(l);
     }
+
+    // 12. AWK
+    {
+        LanguageDef l;
+        l.languageId = "awk";
+        l.displayName = "AWK";
+        l.extensions = {".awk"};
+        l.mimeType = "text/x-awk";
+        l.type = "interpreted";
+        l.runtimeId = "awk";
+        l.editorLanguage = "awk";
+        l.interpreterId = "awk";
+        l.buildCapability = false;
+        l.runCapability = true;
+        l.testCapability = false;
+        l.multiFileCapability = false;
+        l.defaultRunCommand = "awk -f \"{file}\"";
+        l.category = "code";
+        add_lang(l);
+    }
+
+    // 13. SQL
+    {
+        LanguageDef l;
+        l.languageId = "sql";
+        l.displayName = "SQL";
+        l.extensions = {".sql", ".sqlite", ".db"};
+        l.filenames = {"schema.sql"};
+        l.mimeType = "text/x-sql";
+        l.type = "data";
+        l.runtimeId = "sql";
+        l.editorLanguage = "sql";
+        l.interpreterId = "sqlite3";
+        l.buildCapability = false;
+        l.runCapability = true;
+        l.testCapability = false;
+        l.multiFileCapability = true;
+        l.defaultRunCommand = "python -c \"import sqlite3,sys;c=sqlite3.connect(':memory:');cur=c.cursor();rows=[r for s in open(sys.argv[1],encoding='utf-8').read().split(';') if s.strip() for r in cur.execute(s.strip()).fetchall()]; [print(r) for r in rows] if rows else print('Query executed successfully.')\" \"{file}\"";
+        l.category = "code";
+        add_lang(l);
+    }
+
+    // 14. React (JSX / TSX)
+    {
+        LanguageDef l;
+        l.languageId = "react";
+        l.displayName = "React";
+        l.extensions = {".jsx", ".tsx"};
+        l.filenames = {"package.json"};
+        l.mimeType = "text/jsx";
+        l.type = "hybrid";
+        l.runtimeId = "react";
+        l.editorLanguage = "typescriptreact";
+        l.compilerId = "tsc";
+        l.interpreterId = "tsx";
+        l.packageManagerId = "npm";
+        l.buildCapability = true;
+        l.runCapability = true;
+        l.testCapability = true;
+        l.multiFileCapability = true;
+        l.packageCapability = true;
+        l.defaultBuildCommand = "npx tsc --noEmit";
+        l.defaultRunCommand = "npx tsx \"{file}\"";
+        l.category = "code";
+        add_lang(l);
+    }
+
+    // 15. Vue
+    {
+        LanguageDef l;
+        l.languageId = "vue";
+        l.displayName = "Vue";
+        l.extensions = {".vue"};
+        l.filenames = {"package.json"};
+        l.mimeType = "text/x-vue";
+        l.type = "hybrid";
+        l.runtimeId = "vue";
+        l.editorLanguage = "vue";
+        l.packageManagerId = "npm";
+        l.buildCapability = true;
+        l.runCapability = true;
+        l.testCapability = false;
+        l.multiFileCapability = true;
+        l.packageCapability = true;
+        l.defaultBuildCommand = "npm run build";
+        l.defaultRunCommand = "npm run dev";
+        l.category = "code";
+        add_lang(l);
+    }
 }
 
 const LanguageDef* RunixRegistry::find_language_by_id(std::string_view id) const {

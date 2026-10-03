@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { TerminalHeader } from '@/components/terminal/TerminalHeader';
 import { RunixTerminal } from '@/components/terminal/RunixTerminal';
 import { TerminalStatusBar } from '@/components/terminal/TerminalStatusBar';
@@ -11,6 +12,7 @@ import { CommandPalette } from '@/components/terminal/CommandPalette';
 import { SettingsModal } from '@/components/settings/SettingsModal';
 import { HistoryDrawer } from '@/components/history/HistoryDrawer';
 import { WorkspaceManagerModal } from '@/components/workspace/WorkspaceManagerModal';
+import { LanguageSupportModal } from '@/components/workspace/LanguageSupportModal';
 import Image from 'next/image';
 import {
   FolderTree,
@@ -33,7 +35,7 @@ import { useAuth } from '@/lib/auth-context';
 import { TerminalAuthGate } from '@/components/auth/TerminalAuthGate';
 import { safeFetchJson } from '@/lib/safe-json';
 
-export default function ShellPage() {
+function ShellContent() {
   const { user, terminalAccount, loading } = useAuth();
 
   // Settings state (hydrates from terminalAccount preferences)
@@ -102,8 +104,15 @@ export default function ShellPage() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isMatrixOpen, setIsMatrixOpen] = useState(false);
   const [activeFile, setActiveFile] = useState<WorkspaceFile | null>(null);
   const [activeRunningCommand, setActiveRunningCommand] = useState<string | null>(null);
+
+  // URL query parameter support for cross-page file running (?file=...&action=run|build)
+  const searchParams = useSearchParams();
+  const queryFile = searchParams?.get('file');
+  const queryAction = searchParams?.get('action');
+  const actionExecutedRef = useRef(false);
 
   // Terminal reference handlers for injecting keyboard inputs / clear
   const terminalHandlers = useRef<{
@@ -374,6 +383,50 @@ export default function ShellPage() {
     }
   };
 
+  // Automatic query file resolver and loader
+  useEffect(() => {
+    if (!queryFile || !currentWorkspace) return;
+    let active = true;
+    const fetchTargetFile = async () => {
+      try {
+        const token = user ? await user.getIdToken() : '';
+        const res = await safeFetchJson<{ file?: WorkspaceFile }>(
+          `/api/workspaces/${encodeURIComponent(currentWorkspace.workspaceId)}/files?path=${encodeURIComponent(queryFile)}&accountId=${encodeURIComponent(user?.uid || '')}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+        );
+        if (active && res.ok && res.data?.file) {
+          setActiveFile(res.data.file);
+          setEditorPanelCollapsed(false);
+          saveLayout({ editorPanelCollapsed: false });
+        }
+      } catch (err) {
+        console.error('Failed to load query file:', err);
+      }
+    };
+    fetchTargetFile();
+    return () => {
+      active = false;
+    };
+  }, [queryFile, currentWorkspace, user, saveLayout]);
+
+  // Automatic action execution (?action=run or ?action=build)
+  useEffect(() => {
+    if (!queryFile || !queryAction || actionExecutedRef.current) return;
+    if (terminalHandlers.current) {
+      actionExecutedRef.current = true;
+      const cmd = queryAction === 'build' ? `runix build "${queryFile}"` : `runix run "${queryFile}"`;
+      const timer = setTimeout(() => {
+        if (terminalPanelCollapsed) {
+          setTerminalPanelCollapsed(false);
+          saveLayout({ terminalPanelCollapsed: false });
+        }
+        terminalHandlers.current?.focus();
+        terminalHandlers.current?.runCommand(cmd);
+      }, 750);
+      return () => clearTimeout(timer);
+    }
+  }, [queryFile, queryAction, terminalPanelCollapsed, saveLayout]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#07080C] text-[#F3F4F6] flex flex-col items-center justify-center p-4 font-mono select-none">
@@ -452,6 +505,7 @@ export default function ShellPage() {
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenRuntimesMatrix={() => setIsMatrixOpen(true)}
       />
 
       {/* Center Body (Workspace Explorer + Resizer 1 + Terminal Viewport + Resizer 2 + Editor) */}
@@ -761,6 +815,35 @@ export default function ShellPage() {
         onClose={() => setIsHistoryOpen(false)}
         onRerunCommand={handleRerunCommand}
       />
+
+      {/* Universal Runtime Matrix Modal */}
+      <LanguageSupportModal
+        isOpen={isMatrixOpen}
+        onClose={() => setIsMatrixOpen(false)}
+      />
     </div>
+  );
+}
+
+export default function ShellPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#07080C] text-[#F3F4F6] flex flex-col items-center justify-center p-4 font-mono select-none">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="relative w-8 h-8">
+              <Image src="/logo-v2.png" alt="Runix" width={32} height={32} className="object-contain animate-pulse" />
+            </div>
+            <span className="font-bold tracking-wider text-sm text-zinc-200">RUNIX TERMINAL</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+            <span>INITIALIZING SECURE SESSION ENVIRONMENT...</span>
+          </div>
+        </div>
+      }
+    >
+      <ShellContent />
+    </Suspense>
   );
 }

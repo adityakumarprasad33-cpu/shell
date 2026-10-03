@@ -145,12 +145,19 @@ std::string RunixToolchainDiscovery::get_effective_system_path() {
         extraPaths.push_back(std::string(userProfile) + "\\.cargo\\bin");
     }
 
+    extraPaths.push_back("D:\\.cargo\\bin");
+    extraPaths.push_back("C:\\Python314");
+    extraPaths.push_back("C:\\Python313");
+    extraPaths.push_back("C:\\Python312");
+    extraPaths.push_back("C:\\Python311");
     extraPaths.push_back("C:\\MinGW\\bin");
     extraPaths.push_back("C:\\msys64\\mingw64\\bin");
     extraPaths.push_back(pf + "\\nodejs");
     extraPaths.push_back(pf + "\\Git\\cmd");
     extraPaths.push_back(pf + "\\Git\\bin");
+    extraPaths.push_back(pf + "\\Git\\usr\\bin");
     extraPaths.push_back(pf + "\\Go\\bin");
+    extraPaths.push_back("D:\\flutter\\bin");
 #else
     char delim = ':';
     const char* javaHome = std::getenv("JAVA_HOME");
@@ -422,8 +429,8 @@ DiscoveredRuntime RunixToolchainDiscovery::discover(std::string_view runtimeId, 
         res.interpreterExecutablePath = py.executablePath;
         res.interpreterVersion = py.version;
         res.tools["interpreter"] = py;
-    } else if (key == "cpp" || key == "c") {
-        bool isCpp = (key == "cpp");
+    } else if (key == "cpp" || key == "c" || key == "cpp-14" || key == "cpp-17" || key == "cpp-20" || key == "cpp-23") {
+        bool isCpp = (key != "c");
         res.name = isCpp ? "C++" : "C";
         res.category = "compiled";
 
@@ -442,6 +449,31 @@ DiscoveredRuntime RunixToolchainDiscovery::discover(std::string_view runtimeId, 
             res.state = ToolDiscoveryState::Verified;
             res.canBuild = true;
             res.canRun = true;
+
+            // Strict C++20 / C++23 standards enforcement — NEVER silently fall back!
+            if (key == "cpp-20") {
+                bool supportsCpp20 = (comp.version.find("10.") != std::string::npos ||
+                                      comp.version.find("11.") != std::string::npos ||
+                                      comp.version.find("12.") != std::string::npos ||
+                                      comp.version.find("13.") != std::string::npos ||
+                                      comp.version.find("14.") != std::string::npos ||
+                                      comp.version.find("15.") != std::string::npos);
+                if (!supportsCpp20) {
+                    res.canBuild = false;
+                    res.canRun = false;
+                    res.state = ToolDiscoveryState::Unavailable;
+                    res.statusReason = "Requested C++20 requires GCC 10+, but host compiler is G++ " + comp.version + ". Silent fallback to C++14 is disabled.";
+                }
+            } else if (key == "cpp-23") {
+                bool supportsCpp23 = (comp.version.find("14.") != std::string::npos ||
+                                      comp.version.find("15.") != std::string::npos);
+                if (!supportsCpp23) {
+                    res.canBuild = false;
+                    res.canRun = false;
+                    res.state = ToolDiscoveryState::Unavailable;
+                    res.statusReason = "Requested C++23 requires GCC 14+, but host compiler is G++ " + comp.version + ". Silent fallback is disabled.";
+                }
+            }
         } else {
             comp.state = ToolDiscoveryState::Unavailable;
             res.state = ToolDiscoveryState::Unavailable;
@@ -560,6 +592,196 @@ DiscoveredRuntime RunixToolchainDiscovery::discover(std::string_view runtimeId, 
         res.primaryExecutablePath = nodeTool.executablePath;
         res.primaryVersion = nodeTool.version;
         res.tools["runtime"] = nodeTool;
+    } else if (key == "awk") {
+        res.name = "AWK";
+        res.category = "interpreted";
+
+        DiscoveredTool awkTool;
+        awkTool.role = "interpreter";
+        awkTool.name = "GNU Awk (awk/gawk)";
+        awkTool.executableName = "awk";
+        awkTool.executablePath = find_executable("awk");
+        if (awkTool.executablePath.empty()) awkTool.executablePath = find_executable("gawk");
+
+        if (!awkTool.executablePath.empty()) {
+            awkTool.version = probe_version(awkTool.executablePath, {"--version"});
+            awkTool.state = ToolDiscoveryState::Verified;
+            res.state = ToolDiscoveryState::Verified;
+            res.canRun = true;
+        } else {
+            awkTool.state = ToolDiscoveryState::Unavailable;
+            res.state = ToolDiscoveryState::Unavailable;
+            res.statusReason = "AWK or GAWK interpreter is not installed on PATH.";
+        }
+        res.primaryExecutable = awkTool.executableName;
+        res.primaryExecutablePath = awkTool.executablePath;
+        res.primaryVersion = awkTool.version;
+        res.interpreterExecutable = awkTool.executableName;
+        res.interpreterExecutablePath = awkTool.executablePath;
+        res.interpreterVersion = awkTool.version;
+        res.tools["interpreter"] = awkTool;
+    } else if (key == "sql") {
+        res.name = "SQL";
+        res.category = "database";
+
+        DiscoveredTool sqlTool;
+        sqlTool.role = "runtime";
+        sqlTool.name = "SQLite Database Engine";
+        sqlTool.executableName = "sqlite3";
+        sqlTool.executablePath = find_executable("sqlite3");
+        if (sqlTool.executablePath.empty()) {
+            std::string py = find_executable("python");
+            if (py.empty()) py = find_executable("python3");
+            if (!py.empty()) {
+                sqlTool.executablePath = py;
+                sqlTool.executableName = "python (sqlite3)";
+            }
+        }
+
+        if (!sqlTool.executablePath.empty()) {
+            sqlTool.version = "SQLite 3 (via Python/Host)";
+            sqlTool.state = ToolDiscoveryState::Verified;
+            res.state = ToolDiscoveryState::Verified;
+            res.canRun = true;
+        } else {
+            sqlTool.state = ToolDiscoveryState::Unavailable;
+            res.state = ToolDiscoveryState::Unavailable;
+            res.statusReason = "No SQL/SQLite execution engine found.";
+        }
+        res.primaryExecutable = sqlTool.executableName;
+        res.primaryExecutablePath = sqlTool.executablePath;
+        res.primaryVersion = sqlTool.version;
+        res.tools["runtime"] = sqlTool;
+    } else if (key == "react" || key == "vue") {
+        bool isReact = (key == "react");
+        res.name = isReact ? "React" : "Vue";
+        res.category = "framework";
+
+        DiscoveredTool nodeTool;
+        nodeTool.role = "runtime";
+        nodeTool.name = "Node.js Runtime";
+        nodeTool.executableName = "node";
+        nodeTool.executablePath = find_executable("node");
+
+        DiscoveredTool npxTool;
+        npxTool.role = "builder";
+        npxTool.name = "Node Package Runner (npx)";
+        npxTool.executableName = "npx";
+        npxTool.executablePath = find_executable("npx");
+
+        if (!nodeTool.executablePath.empty()) {
+            nodeTool.version = probe_version(nodeTool.executablePath, {"-v"});
+            nodeTool.state = ToolDiscoveryState::Verified;
+            npxTool.state = ToolDiscoveryState::Verified;
+            res.state = ToolDiscoveryState::Verified;
+            res.canRun = true;
+            res.canBuild = true;
+        } else {
+            nodeTool.state = ToolDiscoveryState::Unavailable;
+            res.state = ToolDiscoveryState::Unavailable;
+            res.statusReason = "Node.js runtime is required for " + res.name + ".";
+        }
+        res.primaryExecutable = nodeTool.executableName;
+        res.primaryExecutablePath = nodeTool.executablePath;
+        res.primaryVersion = nodeTool.version;
+        res.tools["runtime"] = nodeTool;
+        res.tools["builder"] = npxTool;
+    } else if (key == "typescript") {
+        res.name = "TypeScript";
+        res.category = "compiled";
+
+        DiscoveredTool tsxTool;
+        tsxTool.role = "runtime";
+        tsxTool.name = "TypeScript Execution Engine (tsx / node)";
+        tsxTool.executableName = "npx";
+        tsxTool.executablePath = find_executable("npx");
+        if (tsxTool.executablePath.empty()) tsxTool.executablePath = find_executable("node");
+
+        if (!tsxTool.executablePath.empty()) {
+            tsxTool.version = probe_version(tsxTool.executablePath, {"-v"});
+            tsxTool.state = ToolDiscoveryState::Verified;
+            res.state = ToolDiscoveryState::Verified;
+            res.canRun = true;
+            res.canBuild = true;
+        } else {
+            tsxTool.state = ToolDiscoveryState::Unavailable;
+            res.state = ToolDiscoveryState::Unavailable;
+            res.statusReason = "Node/NPX runtime is required for TypeScript.";
+        }
+        res.primaryExecutable = tsxTool.executableName;
+        res.primaryExecutablePath = tsxTool.executablePath;
+        res.primaryVersion = tsxTool.version;
+        res.tools["runtime"] = tsxTool;
+    } else if (key == "dart") {
+        res.name = "Dart";
+        res.category = "vm";
+        DiscoveredTool t;
+        t.role = "runtime";
+        t.name = "Dart SDK";
+        t.executableName = "dart";
+        t.executablePath = find_executable("dart");
+        if (!t.executablePath.empty()) {
+            t.version = probe_version(t.executablePath, {"--version"});
+            t.state = ToolDiscoveryState::Verified;
+            res.state = ToolDiscoveryState::Verified;
+            res.canRun = true;
+        } else {
+            t.state = ToolDiscoveryState::Unavailable;
+            res.state = ToolDiscoveryState::Unavailable;
+            res.statusReason = "Dart SDK is not installed on PATH.";
+        }
+        res.primaryExecutable = t.executableName;
+        res.primaryExecutablePath = t.executablePath;
+        res.primaryVersion = t.version;
+        res.tools["runtime"] = t;
+    } else if (key == "fortran") {
+        res.name = "Fortran";
+        res.category = "compiled";
+        DiscoveredTool t;
+        t.role = "compiler";
+        t.name = "GNU Fortran (gfortran)";
+        t.executableName = "gfortran";
+        t.executablePath = find_executable("gfortran");
+        if (!t.executablePath.empty()) {
+            t.version = probe_version(t.executablePath, {"--version"});
+            t.state = ToolDiscoveryState::Verified;
+            res.state = ToolDiscoveryState::Verified;
+            res.canBuild = true;
+            res.canRun = true;
+        } else {
+            t.state = ToolDiscoveryState::Unavailable;
+            res.state = ToolDiscoveryState::Unavailable;
+            res.statusReason = "GFortran compiler is not installed on PATH.";
+        }
+        res.primaryExecutable = t.executableName;
+        res.primaryExecutablePath = t.executablePath;
+        res.primaryVersion = t.version;
+        res.compilerExecutable = t.executableName;
+        res.compilerExecutablePath = t.executablePath;
+        res.compilerVersion = t.version;
+        res.tools["compiler"] = t;
+    } else if (key == "perl") {
+        res.name = "Perl";
+        res.category = "interpreted";
+        DiscoveredTool t;
+        t.role = "interpreter";
+        t.name = "Perl 5 Interpreter";
+        t.executableName = "perl";
+        t.executablePath = find_executable("perl");
+        if (!t.executablePath.empty()) {
+            t.version = probe_version(t.executablePath, {"-v"});
+            t.state = ToolDiscoveryState::Verified;
+            res.state = ToolDiscoveryState::Verified;
+            res.canRun = true;
+        } else {
+            t.state = ToolDiscoveryState::Unavailable;
+            res.state = ToolDiscoveryState::Unavailable;
+            res.statusReason = "Perl interpreter is not installed on PATH.";
+        }
+        res.primaryExecutable = t.executableName;
+        res.primaryExecutablePath = t.executablePath;
+        res.primaryVersion = t.version;
+        res.tools["interpreter"] = t;
     } else {
         // Fallback for other environments
         DiscoveredTool t;
@@ -586,7 +808,11 @@ DiscoveredRuntime RunixToolchainDiscovery::discover(std::string_view runtimeId, 
 }
 
 std::map<std::string, DiscoveredRuntime> RunixToolchainDiscovery::discover_all(bool forceRefresh) {
-    std::vector<std::string> keys = {"java", "python", "cpp", "c", "rust", "go", "lua", "nodejs"};
+    std::vector<std::string> keys = {
+        "java", "python", "cpp", "cpp-14", "cpp-17", "cpp-20", "cpp-23", "c",
+        "rust", "go", "lua", "nodejs", "awk", "sql", "typescript", "react", "vue",
+        "dart", "fortran", "perl"
+    };
     std::map<std::string, DiscoveredRuntime> out;
     for (const auto& k : keys) {
         out[k] = discover(k, forceRefresh);

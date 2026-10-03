@@ -121,7 +121,17 @@ export function WorkspaceExplorer({
 
   // Compute hierarchical tree nodes respecting collapsed state
   const treeNodes = useMemo(() => {
-    const sorted = [...files].sort((a, b) => {
+    // Deduplicate files by unique normalized path to guarantee clean tree and unique keys
+    const uniqueFilesMap = new Map<string, WorkspaceFile>();
+    for (const f of files) {
+      const existing = uniqueFilesMap.get(f.path);
+      if (!existing || (f.updatedAt && existing.updatedAt && f.updatedAt > existing.updatedAt)) {
+        uniqueFilesMap.set(f.path, f);
+      }
+    }
+    const uniqueFiles = Array.from(uniqueFilesMap.values());
+
+    const sorted = uniqueFiles.sort((a, b) => {
       if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
       return a.path.localeCompare(b.path);
     });
@@ -782,7 +792,7 @@ export function WorkspaceExplorer({
           </div>
         )}
 
-        {treeNodes.map((node) => {
+        {treeNodes.map((node, nodeIdx) => {
           const file = node.file;
           const isDir = file.type === 'directory';
           const isActive = activeFilePath === file.path;
@@ -793,7 +803,7 @@ export function WorkspaceExplorer({
 
           return (
             <div
-              key={file.path}
+              key={file.fileId ? `${file.fileId}-${nodeIdx}` : `${file.path}-${file.type}-${nodeIdx}`}
               draggable={!isRenaming}
               onDragStart={(e) => {
                 e.dataTransfer.setData('text/plain', file.path);

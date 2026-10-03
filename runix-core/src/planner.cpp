@@ -130,9 +130,13 @@ JavaSourceInfo RunixPlanner::inspect_java_source(std::string_view sourceCode, st
 BuildPlan RunixPlanner::create_build_plan(
     std::string_view filename,
     std::string_view workingDirectory,
-    const std::vector<std::string>& workspaceFiles
+    const std::vector<std::string>& workspaceFiles,
+    std::string_view explicitLanguageId
 ) {
     DetectionResult det = RunixFileDetector::detect(filename, "", workspaceFiles);
+    if (!explicitLanguageId.empty()) {
+        det.languageId = std::string(explicitLanguageId);
+    }
     auto& disc = RunixToolchainDiscovery::instance();
     DiscoveredRuntime dr = disc.discover(det.runtimeId);
 
@@ -247,6 +251,14 @@ BuildPlan RunixPlanner::create_build_plan(
         plan.arguments.push_back("-o");
         plan.arguments.push_back("\"" + outBin + "\"");
         plan.arguments.push_back("\"" + normTarget + "\"");
+    } else if (det.languageId == "typescript" || det.languageId == "react") {
+        plan.tool = "tsc";
+        std::string npx = disc.find_executable("npx");
+        plan.toolPath = !npx.empty() ? npx : "npx";
+        plan.outputDirectory = "build";
+        plan.arguments.push_back("tsc");
+        plan.arguments.push_back("--noEmit");
+        plan.arguments.push_back("\"" + RunixPathResolver::normalize_logical_path(filename) + "\"");
     } else {
         // Non-compiled languages don't require build plan
         plan.isAvailable = false;
@@ -259,9 +271,13 @@ BuildPlan RunixPlanner::create_build_plan(
 ExecutionPlan RunixPlanner::create_execution_plan(
     std::string_view filename,
     std::string_view workingDirectory,
-    const std::vector<std::string>& workspaceFiles
+    const std::vector<std::string>& workspaceFiles,
+    std::string_view explicitLanguageId
 ) {
     DetectionResult det = RunixFileDetector::detect(filename, "", workspaceFiles);
+    if (!explicitLanguageId.empty()) {
+        det.languageId = std::string(explicitLanguageId);
+    }
     auto& disc = RunixToolchainDiscovery::instance();
     DiscoveredRuntime dr = disc.discover(det.runtimeId);
 
@@ -345,6 +361,40 @@ ExecutionPlan RunixPlanner::create_execution_plan(
     } else if (det.languageId == "bash") {
         plan.runtimeExecutable = "bash";
         plan.runtimePath = dr.primaryExecutablePath;
+        plan.arguments.push_back("\"" + normTarget + "\"");
+    } else if (det.languageId == "awk") {
+        plan.runtimeExecutable = "awk";
+        plan.runtimePath = dr.primaryExecutablePath;
+        if (plan.runtimePath.empty()) {
+            std::string awkBin = disc.find_executable("awk");
+            if (awkBin.empty()) awkBin = disc.find_executable("gawk");
+            plan.runtimePath = awkBin;
+        }
+        if (plan.runtimePath.empty()) {
+            plan.isAvailable = false;
+            plan.unavailableReason = "AWK / GAWK interpreter is unavailable on PATH.";
+            return plan;
+        }
+        plan.arguments.push_back("-f");
+        plan.arguments.push_back("\"" + normTarget + "\"");
+    } else if (det.languageId == "sql") {
+        std::string py = disc.find_executable("python");
+        if (py.empty()) py = disc.find_executable("python3");
+        if (py.empty()) {
+            plan.isAvailable = false;
+            plan.unavailableReason = "Python/SQLite runtime is unavailable for SQL query execution.";
+            return plan;
+        }
+        plan.runtimeExecutable = "python";
+        plan.runtimePath = py;
+        plan.arguments.push_back("-c");
+        plan.arguments.push_back("\"import sqlite3,sys;c=sqlite3.connect(':memory:');cur=c.cursor();rows=[r for s in open(sys.argv[1],encoding='utf-8').read().split(';') if s.strip() for r in cur.execute(s.strip()).fetchall()]; [print(r) for r in rows] if rows else print('Query executed successfully.')\"");
+        plan.arguments.push_back("\"" + normTarget + "\"");
+    } else if (det.languageId == "react" || det.languageId == "vue") {
+        plan.runtimeExecutable = "npx";
+        std::string npx = disc.find_executable("npx");
+        plan.runtimePath = !npx.empty() ? npx : "npx";
+        plan.arguments.push_back("tsx");
         plan.arguments.push_back("\"" + normTarget + "\"");
     } else {
         plan.runtimeExecutable = dr.primaryExecutable;

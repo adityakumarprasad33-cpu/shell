@@ -58,13 +58,15 @@ public:
     static BuildPlan create_build_plan(
         std::string_view filename,
         std::string_view workingDirectory,
-        const std::vector<std::string>& workspaceFiles = {}
+        const std::vector<std::string>& workspaceFiles = {},
+        std::string_view explicitLanguageId = ""
     );
 
     static ExecutionPlan create_execution_plan(
         std::string_view filename,
         std::string_view workingDirectory,
-        const std::vector<std::string>& workspaceFiles = {}
+        const std::vector<std::string>& workspaceFiles = {},
+        std::string_view explicitLanguageId = ""
     );
 
     static JavaSourceInfo inspect_java_source(std::string_view sourceCode, std::string_view filename);

@@ -21,6 +21,7 @@ import {
   FolderTree,
   Code2,
   LayoutGrid,
+  Layers,
 } from 'lucide-react';
 import { TerminalSession, ExecutionMode, TerminalWorkspace } from '@/lib/types/terminal';
 import { useAuth } from '@/lib/auth-context';
@@ -48,6 +49,7 @@ interface TerminalHeaderProps {
   onOpenCommandPalette: () => void;
   onOpenSettings: () => void;
   onOpenHistory: () => void;
+  onOpenRuntimesMatrix?: () => void;
 }
 
 export function TerminalHeader({
@@ -72,6 +74,7 @@ export function TerminalHeader({
   onOpenCommandPalette,
   onOpenSettings,
   onOpenHistory,
+  onOpenRuntimesMatrix,
 }: TerminalHeaderProps) {
   const { user, terminalAccount, signOut } = useAuth();
   const activeWorkspace = workspaces.find((w) => w.workspaceId === activeWorkspaceId) || workspaces[0];
@@ -228,6 +231,18 @@ export function TerminalHeader({
             </>
           )}
         </button>
+
+        {/* Universal Runtime Matrix Trigger */}
+        {onOpenRuntimesMatrix && (
+          <button
+            onClick={onOpenRuntimesMatrix}
+            className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded bg-white/5 border border-white/10 text-xs text-zinc-300 hover:text-white hover:border-[#315EF7]/40 transition-all font-mono"
+            title="Universal Runtime Matrix (C++20 Core)"
+          >
+            <Layers className="w-3.5 h-3.5 text-[#315EF7]" />
+            <span className="text-[11px]">Runtimes</span>
+          </button>
+        )}
 
         {/* Command Palette Trigger */}
         <button

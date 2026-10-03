@@ -155,3 +155,9 @@ int run_all_tests() {
 }
 
 } // namespace runix
+
+#if defined(RUNIX_STANDALONE_TEST_MAIN)
+int main() {
+    return runix::run_all_tests();
+}
+#endif

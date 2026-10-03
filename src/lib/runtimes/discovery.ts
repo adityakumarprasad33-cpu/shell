@@ -493,6 +493,7 @@ export function getEffectiveSystemPath(): string {
       path.join('C:', 'msys64', 'ucrt64', 'bin'),
       path.join('C:', 'ProgramData', 'chocolatey', 'bin'),
       path.join(progFiles, 'Go', 'bin'),
+      'D:\\flutter\\bin',
     ];
 
     // JDK & Java Discovery Paths (Temurin, Oracle, Corretto, Microsoft, Zulu)
