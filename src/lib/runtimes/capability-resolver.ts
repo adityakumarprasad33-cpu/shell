@@ -63,7 +63,15 @@ export interface FileCapabilityState {
  * those runtimes are not installed on the deployment host.
  */
 function isCloudEnvironment(): boolean {
-  return typeof process !== 'undefined' && (
+  if (typeof process === 'undefined') return false;
+
+  // Explicit opt-in via env var (works on any platform)
+  if (process.env.NEXT_PUBLIC_RUNIX_CLOUD === '1' || process.env.RUNIX_CLOUD === '1') {
+    return true;
+  }
+
+  // Standard platform env vars
+  if (
     !!process.env.VERCEL ||
     !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
     !!process.env.GOOGLE_CLOUD_PROJECT ||
@@ -72,7 +80,40 @@ function isCloudEnvironment(): boolean {
     !!process.env.RAILWAY_ENVIRONMENT ||
     !!process.env.RENDER ||
     !!process.env.FLY_APP_NAME
-  );
+  ) {
+    return true;
+  }
+
+  // Additional AWS Lambda indicators (sometimes VERCEL/AWS_LAMBDA_FUNCTION_NAME not passed to API routes)
+  if (
+    !!process.env.AWS_REGION ||
+    !!process.env.LAMBDA_TASK_ROOT ||
+    !!process.env.LAMBDA_RUNTIME_DIR ||
+    !!process.env.AWS_EXECUTION_ENV
+  ) {
+    return true;
+  }
+
+  // Vercel-specific additional indicators
+  if (
+    !!process.env.VERCEL_ENV ||
+    !!process.env.VERCEL_REGION ||
+    !!process.env.VERCEL_DEPLOYMENT_ID
+  ) {
+    return true;
+  }
+
+  // Heuristic: if common system binaries are missing, we're likely in a restricted cloud environment
+  try {
+    const { execSync } = require('child_process');
+    execSync('which python3 || which python', { stdio: 'ignore', timeout: 1000 });
+    execSync('which node', { stdio: 'ignore', timeout: 1000 });
+    // If we get here, basic binaries exist - likely not a restricted cloud env
+    return false;
+  } catch {
+    // Binaries missing - likely cloud/serverless
+    return true;
+  }
 }
 
 /**
