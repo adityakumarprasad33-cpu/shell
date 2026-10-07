@@ -58,8 +58,31 @@ export interface FileCapabilityState {
 }
 
 /**
+ * Detects whether we're running inside a cloud/serverless environment
+ * where local binary probing (python, gcc, java, etc.) would fail because
+ * those runtimes are not installed on the deployment host.
+ */
+function isCloudEnvironment(): boolean {
+  return typeof process !== 'undefined' && (
+    !!process.env.VERCEL ||
+    !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    !!process.env.GOOGLE_CLOUD_PROJECT ||
+    !!process.env.AZURE_FUNCTIONS_ENVIRONMENT ||
+    !!process.env.NETLIFY ||
+    !!process.env.RAILWAY_ENVIRONMENT ||
+    !!process.env.RENDER ||
+    !!process.env.FLY_APP_NAME
+  );
+}
+
+/**
  * Resolves full capability state for a file within a workspace.
- * Real host discovery determines capability — never static registry data.
+ * 
+ * In local/desktop environments, real host discovery determines capability.
+ * In cloud/serverless environments (Vercel, etc.), local binary probing is
+ * bypassed and capabilities are reported as AVAILABLE based on the language
+ * registry's static definitions. Actual execution is handled by the sandbox
+ * runner which uses whatever runtimes are available on the execution host.
  */
 export async function resolveFileCapabilities(
   filename: string,
@@ -96,7 +119,62 @@ export async function resolveFileCapabilities(
     };
   }
 
-  // Check real host runtime and compiler discovery
+  // ──────────────────────────────────────────────────────────────────────────
+  // CLOUD / SERVERLESS FAST PATH
+  // When deployed on Vercel/serverless, local binary discovery (execSync,
+  // fs.existsSync for python/gcc/java) will always fail because those
+  // runtimes aren't installed on the deployment host. Instead, trust the
+  // language registry's capability definitions and report runtimes as
+  // AVAILABLE. The sandbox runner handles actual process execution.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (isCloudEnvironment()) {
+    const runtimeDef = RUNTIME_REGISTRY[runtimeId];
+    const runCommand = (language.defaultRunCommand || runtimeDef?.runCommand || `${runtimeId} "{file}"`)
+      .replace(/\{file\}/g, filename);
+    const compileCommand = (language.defaultBuildCommand || runtimeDef?.buildCommand || undefined);
+    const testCommand = (language.defaultTestCommand || runtimeDef?.testCommand || undefined);
+    const debugCommand = (language.defaultDebugCommand || runtimeDef?.debugCommand || undefined);
+
+    return {
+      filename,
+      fileType: language.type,
+      languageId: language.languageId,
+      languageName: language.displayName,
+      editorLanguage: language.editorLanguage,
+      category: language.category,
+      runtimeId,
+      runtimeName: runtimeDef?.name || language.displayName,
+      runtimeVersion: 'cloud',
+      runtimeAvailable: true,
+      verificationStatus: 'AVAILABLE',
+      statusReason: undefined,
+      compilerAvailable: language.buildCapability,
+      capabilities: {
+        run: language.runCapability,
+        build: language.buildCapability,
+        debug: language.debugCapability,
+        test: language.testCapability,
+        stdin: language.stdinCapability,
+        stdout: language.stdoutCapability,
+        stderr: language.stderrCapability,
+        multiFile: language.multiFileCapability,
+        packages: language.packageCapability,
+        network: language.networkCapability,
+      },
+      executionConfig: {
+        compileCommand: compileCommand?.replace(/\{file\}/g, filename),
+        runCommand,
+        testCommand: testCommand?.replace(/\{file\}/g, filename),
+        debugCommand: debugCommand?.replace(/\{file\}/g, filename),
+        env: {},
+        timeoutMs: 30000,
+      },
+      isRunnable: language.runCapability,
+    };
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // LOCAL / DESKTOP PATH: Check real host runtime and compiler discovery
   const discovery = await discoverRuntime(runtimeId);
   const runtimeDef = RUNTIME_REGISTRY[runtimeId];
 
